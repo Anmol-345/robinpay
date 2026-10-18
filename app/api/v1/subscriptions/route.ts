@@ -1,14 +1,11 @@
 // =============================================================================
 // app/api/v1/subscriptions/route.ts
 // =============================================================================
-// Subscription plan management stubs. Full plan creation lives on-chain via the
-// SubscriptionVault; these endpoints mirror plans/subscriptions into the DB.
+// Subscription plan management. Plans live on-chain via SubscriptionVault; this
+// endpoint is a thin stateless helper. No database writes.
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { prisma } from '@/lib/db';
-import { authenticate } from '@/lib/auth/api-keys';
-import { parseUnits } from 'viem';
-import { getToken } from '@/lib/chain/tokens';
+import { authenticate } from '@/lib/auth/stateless';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -16,15 +13,11 @@ export const dynamic = 'force-dynamic';
 const fail = (code: string, message: string, status = 400) =>
   NextResponse.json({ error: { code, message } }, { status });
 
-export async function GET(req: Request) {
-  const auth = await authenticate(req);
-  if (!auth) return NextResponse.json({ error: { code: 'UNAUTHORIZED', message: 'Invalid API key' } }, { status: 401 });
-
-  const { searchParams } = new URL(req.url);
-  const merchantId = searchParams.get('merchantId') || auth.merchantId;
-
-  const plans = await prisma.plan.findMany({ where: { merchantId }, orderBy: { createdAt: 'desc' } });
-  return NextResponse.json({ plans });
+export async function GET() {
+  return NextResponse.json({
+    plans: [],
+    note: 'Plans and subscriptions are stored on-chain in SubscriptionVault. Query the contract directly.',
+  });
 }
 
 const Body = z.object({
@@ -36,31 +29,25 @@ const Body = z.object({
 });
 
 export async function POST(req: Request) {
-  const auth = await authenticate(req, { requireSecret: true });
+  const auth = await authenticate(req);
   if (!auth) return fail('UNAUTHORIZED', 'Invalid API key', 401);
 
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return fail('BAD_REQUEST', parsed.error.message);
   const b = parsed.data;
 
-  const token = getToken(b.token);
-  if (!token) return fail('TOKEN_NOT_SUPPORTED', 'Token not supported', 400);
-
-  const amount = parseUnits(b.amount, token.decimals);
-
-  // onchainPlanId assigned after the merchant calls createPlan on-chain
-  const plan = await prisma.plan.create({
-    data: {
-      merchantId: auth.merchantId,
-      onchainPlanId: '0',
-      name: b.name,
-      tokenAddress: token.address,
-      amount: amount.toString(),
-      intervalSecs: b.intervalSecs,
-      trialSecs: b.trialSecs,
-      isActive: true,
+  return NextResponse.json(
+    {
+      plan: {
+        merchant: auth.merchant,
+        name: b.name,
+        token: b.token,
+        amount: b.amount,
+        intervalSecs: b.intervalSecs,
+        trialSecs: b.trialSecs,
+        note: 'Call createPlan on SubscriptionVault on-chain to register the plan.',
+      },
     },
-  });
-
-  return NextResponse.json({ plan }, { status: 201 });
+    { status: 201 },
+  );
 }

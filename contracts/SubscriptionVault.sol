@@ -232,4 +232,29 @@ contract SubscriptionVault is AccessControl, Pausable, ReentrancyGuard {
     function getSubscription(uint256 subId) external view returns (Subscription memory) {
         return subscriptions[subId];
     }
+
+    function getDueSubscriptions(uint256 offset, uint256 limit) external view returns (uint256[] memory ids) {
+        // Simple linear scan over all created subscriptions. For large merchant
+        // sets this should be replaced with an indexed due-list, but it keeps
+        // the contract stateless and dependency-free.
+        uint256 count = 0;
+        for (uint256 i = 1; i < nextSubId; i++) {
+            if (subscriptions[i].subscriber == address(0)) continue;
+            if (block.timestamp >= subscriptions[i].nextChargeAt && subscriptions[i].status == Status.Active) {
+                count++;
+            }
+        }
+        uint256[] memory result = new uint256[](count);
+        uint256 j = 0;
+        for (uint256 i = 1; i < nextSubId; i++) {
+            if (subscriptions[i].subscriber == address(0)) continue;
+            if (block.timestamp >= subscriptions[i].nextChargeAt && subscriptions[i].status == Status.Active) {
+                if (j >= offset && j - offset < limit) {
+                    result[j - offset] = i;
+                }
+                j++;
+            }
+        }
+        return result;
+    }
 }

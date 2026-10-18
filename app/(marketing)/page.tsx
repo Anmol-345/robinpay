@@ -2,7 +2,6 @@
 // app/(marketing)/page.tsx — RobinPay marketing landing page
 // ==========================================================================
 import Link from 'next/link';
-import { PayButton } from '@/components/checkout/PayButton';
 
 export default function MarketingPage() {
   return (
@@ -40,7 +39,12 @@ export default function MarketingPage() {
           >
             Read the docs
           </Link>
-          <PayButton publicKey="pk_test_demo" amount="49.00" token="USDC" />
+          <Link
+            href="/pay/demo-invoice"
+            className="px-6 py-3 text-sm font-semibold text-white bg-zinc-900 rounded-md shadow hover:bg-zinc-800 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"
+          >
+            Try demo pay
+          </Link>
         </div>
       </section>
 

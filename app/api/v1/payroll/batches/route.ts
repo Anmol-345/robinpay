@@ -1,14 +1,15 @@
 // =============================================================================
 // app/api/v1/payroll/batches/route.ts
 // =============================================================================
-// Parses a payroll CSV, validates recipients, chunks by MAX_RECIPIENTS, and
-// returns calldata for the merchant wallet to sign (one tx per chunk).
+// Validates a payroll CSV and returns chunks for the client to sign and send.
+// Nothing is persisted server-side. The client sends batchPayToken /
+// batchPayNative per chunk from the user's wallet.
+// Auth: sk_ key.
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { parse } from 'papaparse';
 import { isAddress, keccak256, toHex, parseUnits } from 'viem';
-import { prisma } from '@/lib/db';
-import { authenticate } from '@/lib/auth/api-keys';
+import { authenticate } from '@/lib/auth/stateless';
 import { getToken } from '@/lib/chain/tokens';
 
 export const runtime = 'nodejs';
@@ -26,7 +27,7 @@ const fail = (code: string, message: string, status = 400) =>
   NextResponse.json({ error: { code, message } }, { status });
 
 export async function POST(req: Request) {
-  const auth = await authenticate(req, { requireSecret: true });
+  const auth = await authenticate(req);
   if (!auth) return fail('UNAUTHORIZED', 'Invalid API key', 401);
 
   const parsed = Body.safeParse(await req.json().catch(() => null));
@@ -36,7 +37,11 @@ export async function POST(req: Request) {
   const token = getToken(tokenSymbol);
   if (!token) return fail('TOKEN_NOT_SUPPORTED', 'Token not supported', 400);
 
-  const rows = parse(csv, { header: true, skipEmptyLines: true }).data as Array<{ recipient?: string; amount?: string; memo?: string }>;
+  const rows = parse(csv, { header: true, skipEmptyLines: true }).data as Array<{
+    recipient?: string;
+    amount?: string;
+    memo?: string;
+  }>;
 
   const seen = new Set<string>();
   const items: Array<{ recipient: `0x${string}`; amount: bigint; memo: string }> = [];
@@ -60,19 +65,7 @@ export async function POST(req: Request) {
 
   if (items.length === 0) return fail('EMPTY_BATCH', 'No valid payout items', 400);
 
-  // Create the batch record
-  const batch = await prisma.payrollBatch.create({
-    data: {
-      id: batchId,
-      merchantId: auth.merchantId,
-      label: batchId,
-      tokenAddress: token.address,
-      totalAmount: total.toString(),
-      status: 'DRAFT',
-    },
-  });
-
-  // Chunk into batches of MAX_RECIPIENTS
+  // Chunk into batches of MAX_RECIPIENTS.
   const chunks: Array<{ chunkIndex: number; recipients: `0x${string}`[]; amounts: bigint[] }> = [];
   for (let i = 0; i < items.length; i += MAX_RECIPIENTS) {
     const chunk = items.slice(i, i + MAX_RECIPIENTS);
@@ -83,31 +76,20 @@ export async function POST(req: Request) {
     });
   }
 
-  for (const chunk of chunks) {
-    await prisma.payrollItem.createMany({
-      data: chunk.recipients.map((recipient, i) => ({
-        id: `${batchId}-${chunk.chunkIndex}-${i}`,
-        batchId: batch.id,
-        chunkIndex: chunk.chunkIndex,
-        recipient: recipient.toLowerCase(),
-        amount: chunk.amounts[i].toString(),
-        memo: items.find((it) => it.recipient.toLowerCase() === recipient.toLowerCase())?.memo ?? '',
-        status: 'DRAFT',
-      })),
-    });
-  }
-
   return NextResponse.json({
-    batchId: batch.id,
+    batchId,
     token: token.symbol,
+    tokenAddress: token.address,
     totalAmount: total.toString(),
     recipientCount: items.length,
     chunkCount: chunks.length,
+    maxRecipients: MAX_RECIPIENTS,
     chunks: chunks.map((c) => ({
       chunkIndex: c.chunkIndex,
       batchId: keccak256(toHex(batchId + ':' + c.chunkIndex)) as string,
       recipientCount: c.recipients.length,
     })),
-    // Frontend signs batchPayToken(batchId, token, recipients, amounts) per chunk
+    // Client sends batchPayToken(batchId, token, recipients, amounts) per chunk
+    // from the user's wallet; history is read from BatchExecuted/PayoutSent logs.
   });
 }

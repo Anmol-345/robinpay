@@ -57,4 +57,6 @@ interface ISubscriptionVault {
     function isDue(uint256 subId) external view returns (bool);
     function getPlan(uint256 planId) external view returns (Plan memory);
     function getSubscription(uint256 subId) external view returns (Subscription memory);
+    /// @notice Returns subscription IDs that are due for charging, in [offset, offset+limit).
+    function getDueSubscriptions(uint256 offset, uint256 limit) external view returns (uint256[] memory ids);
 }

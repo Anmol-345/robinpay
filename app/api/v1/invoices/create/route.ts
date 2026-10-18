@@ -1,15 +1,15 @@
 // =============================================================================
 // app/api/v1/invoices/create/route.ts
 // =============================================================================
-// Creates an invoice and returns a hosted payment link (/pay/[invoiceId]).
-// Auth: sk_live_ / sk_test_
-// Body: { amount, token, description?, externalRef?, escrow?, metadata?, expiresInMinutes?, successUrl?, cancelUrl? }
+// Creates a signed, stateless invoice token. Nothing is written to a database.
+// Auth: sk_ key.
+// Body: { amount, token, description?, externalRef?, metadata?, expiresInMinutes?, escrow? }
+// Returns { url, orderId, token }. orderId = keccak256(token).
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { createId } from '@paralleldrive/cuid2';
 import { keccak256, toHex, parseUnits } from 'viem';
-import { prisma } from '@/lib/db';
-import { authenticate } from '@/lib/auth/api-keys';
+import { authenticate } from '@/lib/auth/stateless';
+import { createInvoiceToken } from '@/lib/invoice/token';
 import { getToken } from '@/lib/chain/tokens';
 import { env } from '@/lib/env';
 
@@ -23,8 +23,6 @@ const Body = z.object({
   externalRef: z.string().max(128).optional(),
   metadata: z.record(z.string(), z.any()).optional(),
   expiresInMinutes: z.number().int().min(5).max(60 * 24 * 30).default(60 * 24),
-  successUrl: z.string().url().optional(),
-  cancelUrl: z.string().url().optional(),
   escrow: z
     .object({
       enabled: z.boolean(),
@@ -37,59 +35,45 @@ const Body = z.object({
     .optional(),
 });
 
+const fail = (code: string, message: string, status = 400) =>
+  NextResponse.json({ error: { code, message } }, { status });
+
 export async function POST(req: Request) {
-  const auth = await authenticate(req, { requireSecret: true });
-  if (!auth) return NextResponse.json({ error: { code: 'UNAUTHORIZED', message: 'Invalid API key' } }, { status: 401 });
+  const auth = await authenticate(req);
+  if (!auth) return fail('UNAUTHORIZED', 'Invalid API key', 401);
 
   const parsed = Body.safeParse(await req.json().catch(() => null));
-  if (!parsed.success) return NextResponse.json({ error: { code: 'BAD_REQUEST', message: parsed.error.message } }, { status: 400 });
+  if (!parsed.success) return fail('BAD_REQUEST', parsed.error.message);
   const b = parsed.data;
 
   const token = getToken(b.token);
-  if (!token) return NextResponse.json({ error: { code: 'TOKEN_NOT_SUPPORTED', message: 'Token not supported' } }, { status: 400 });
+  if (!token) return fail('TOKEN_NOT_SUPPORTED', 'Token not supported', 400);
 
   const amount = parseUnits(b.amount, token.decimals);
 
   if (b.escrow?.enabled) {
     const sum = (b.escrow.milestones ?? []).reduce((a, m) => a + parseUnits(m.amount, token.decimals), 0n);
     if (sum !== amount) {
-      return NextResponse.json({ error: { code: 'MILESTONE_SUM', message: 'Milestones must equal total' } }, { status: 400 });
+      return fail('MILESTONE_SUM', 'Milestones must equal total', 400);
     }
   }
 
-  const id = createId();
-  const orderId = keccak256(toHex(auth.merchantId + ':' + id));
-  const expiresAt = new Date(Date.now() + b.expiresInMinutes * 60_000);
-
-  const invoice = await prisma.invoice.create({
-    data: {
-      id,
-      orderId: orderId as string,
-      merchantId: auth.merchantId,
-      description: b.description,
-      externalRef: b.externalRef,
-      tokenAddress: token.address,
-      tokenSymbol: b.token,
-      tokenDecimals: token.decimals,
-      amount: amount.toString(),
-      escrowEnabled: !!b.escrow?.enabled,
-      milestones: b.escrow?.milestones ? JSON.parse(JSON.stringify(b.escrow.milestones)) : undefined,
-      metadata: b.metadata,
-      successUrl: b.successUrl,
-      cancelUrl: b.cancelUrl,
-      status: 'UNPAID',
-      expiresAt,
-    },
+  const invoiceToken = createInvoiceToken({
+    merchant: auth.merchant,
+    amount: amount.toString(),
+    token: token.address,
+    decimals: token.decimals,
+    description: b.description,
+    externalRef: b.externalRef,
+    metadata: b.metadata,
+    escrow: b.escrow?.enabled
+      ? { milestones: b.escrow.milestones ?? [] }
+      : undefined,
+    exp: Math.floor(Date.now() / 1000) + b.expiresInMinutes * 60,
   });
 
-  return NextResponse.json(
-    {
-      id: invoice.id,
-      url: env().NEXT_PUBLIC_APP_URL + '/pay/' + invoice.id,
-      orderId,
-      status: invoice.status,
-      expiresAt,
-    },
-    { status: 201 },
-  );
+  const orderId = keccak256(toHex(invoiceToken)) as `0x${string}`;
+  const url = env().NEXT_PUBLIC_APP_URL + '/pay/' + invoiceToken;
+
+  return NextResponse.json({ url, orderId, token: invoiceToken }, { status: 201 });
 }

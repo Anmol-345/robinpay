@@ -59,4 +59,12 @@ export const SUBSCRIPTION_VAULT_ABI = parseAbi([
   'function claim(uint256 subId) external returns (bool success)',
   'function claimBatch(uint256[] calldata subIds) external returns (bool[] memory results)',
   'function isDue(uint256 subId) external view returns (bool)',
+  'function getDueSubscriptions(uint256 offset, uint256 limit) external view returns (uint256[] memory ids)',
+]);
+
+export const BATCH_PAYOUT_ABI = parseAbi([
+  'event BatchExecuted(bytes32 indexed batchId, address indexed sender, address token, uint256 recipientCount, uint256 totalAmount, uint256 fee)',
+  'event PayoutSent(bytes32 indexed batchId, address indexed recipient, uint256 amount, uint256 index)',
+  'function MAX_RECIPIENTS() external view returns (uint256)',
+  'function isExecuted(bytes32 batchId) external view returns (bool)',
 ]);

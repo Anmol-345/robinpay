@@ -4,50 +4,40 @@ Developer-first payment gateway suite on Robinhood Chain (Arbitrum Orbit EVM L2,
 
 This Next.js 16 App Router implementation follows [`RobinPay — Technical Architecture & Launch Package.md`](./RobinPay%20—%20Technical%20Architecture%20&%20Launch%20Package.md).
 
-## What's implemented
+## Architecture — database-free
 
-**Backend / API (App Router route handlers)**
-- `POST /api/v1/checkout/sessions` — short-lived pk_ checkout session
-- `POST /api/v1/checkout/verify` — verify tx hash on-chain, mark invoice PAID, fire webhook
-- `POST /api/v1/invoices/create` — create invoice + hosted `/pay/[id]` link
-- `GET /api/v1/invoices/[id]/receipt` — PDF receipt stub
-- `GET /api/v1/subscriptions` — list/create plans
-- `POST /api/v1/payroll/batches` — CSV upload, validation, recipient chunking
-- `POST /api/v1/webhooks/test` — send a sample signed webhook
-- `GET /api/cron/process-subscriptions` — lease + claimBatch via operator key
-- `GET /api/cron/retry-webhooks` — exponential-backoff webhook redelivery
-- `GET /api/cron/reconcile-chain` — rescan recent blocks for missed payments
+**The blockchain is the only source of truth.** Nothing is persisted server-side:
+no Prisma, no PostgreSQL, no KV store, no file-based store. All state is derived
+from on-chain events or encoded in signed, stateless tokens.
 
-**Libraries**
-- `lib/env.ts` — zod-validated env (server-only + NEXT_PUBLIC_*)
-- `lib/db.ts` — Prisma singleton
-- `lib/chain/{client,chains,tokens,decoders,wallet}.ts` — viem clients for Chain ID 4663
-- `lib/auth/{api-keys,session,rate-limit}.ts` — pk_/sk_ key lifecycle, checkout sessions
-- `lib/webhooks/{sign,dispatch}.ts` — HMAC-SHA256 signing + retry scheduling
-- `lib/payments/{verify,fees}.ts` — chain-verified payment, bps fee math
+| Concern | Stateless mechanism |
+| --- | --- |
+| Invoices | Signed `inv_<payload>.<hmac>` tokens (HMAC-SHA256, `INVOICE_SIGNING_SECRET`). `orderId = keccak256(token)`. |
+| API keys | Self-validating `sk_<env>_<payload>.<hmac>` keys (HMAC-SHA256, `API_KEY_SIGNING_SECRET`); revocation via `MIN_KEY_VERSION`. |
+| Sessions | SIWE login → signed httpOnly `rp_session` cookie (`SESSION_SECRET`). |
+| Webhooks | HMAC-SHA256 (`t=...,v1=...`) with per-merchant secret via HKDF(`MASTER_WEBHOOK_SECRET`, merchant). Delivered inline; no outbox table. |
+| Payment status | Derived from chain: `isOrderPaid(orderId)` + `PaymentProcessed` logs. |
+| Subscriptions | Due IDs read on-chain via `getDueSubscriptions`; `claimBatch` submitted by operator. |
+| Payroll | CSV validated client-side; chunks sent from user's wallet; history from `BatchExecuted`/`PayoutSent` logs. |
 
-**Smart contracts (`contracts/`)**
-- Interfaces: `IPaymentRouter`, `ISubscriptionVault`, `IEscrowInvoice`, `IBatchPayout`
-- Implementations: `PaymentRouter`, `SubscriptionVault`, `EscrowInvoice`, `BatchPayout`, `Registry`
-- Shared security module: `security.sol` (AccessControl, Pausable, ReentrancyGuard)
+**Routes**
+- `GET /` — marketing landing
+- `GET /pay/[token]` — public payment page (decodes signed invoice token)
+- `POST /api/v1/invoices/create` — signed invoice token → `{ url, orderId, token }`
+- `POST /api/v1/checkout/verify` — verify receipt + event, fire webhook inline, return `{ status, txHash }`
+- `POST /api/auth/session` — SIWE login (sets httpOnly cookie); `DELETE` to logout
+- `GET /api/v1/events?since=&type=` — pull missed on-chain events for a merchant
+- `POST /api/v1/payroll/batches` — validate CSV + chunks for client-side wallet signing
+- `GET /api/cron/process-subscriptions` — operator claimBatch cron (Vercel Cron)
 
-**Database** — `prisma/schema.prisma` (Merchant, ApiKey, Invoice, Payment, Plan, Subscription, PayrollBatch, WebhookLog, CheckoutSession, WebhookEndpoint, Customer)
-
-**Frontend**
-- `app/(marketing)/page.tsx` — landing page
-- `app/pay/[invoiceId]/page.tsx` — public payment page
-- `app/embed/checkout/page.tsx` — iframe embed target
-- `components/checkout/PayButton`, `WalletModal`, `TxStatus`
-
-**Config** — `vercel.json` (cron schedules), `.env.example` (env template)
+**Config** — `.env.example` (no `DATABASE_URL`; all secrets in env). **Smart contracts** — `contracts/` (PaymentRouter, SubscriptionVault with `getDueSubscriptions`, EscrowInvoice, BatchPayout, Registry, security module).
 
 ## Getting Started
 
-1. Copy `.env.example` to `.env.local` and fill in values (Chain ID 4663 RPC, contract addresses, DATABASE_URL, CRON_SECRET, OPERATOR_PRIVATE_KEY).
+1. Copy `.env.example` to `.env.local` and fill in values (Chain ID 4663 RPC, contract addresses, signing secrets).
 2. `npm install`
-3. `npx prisma generate`
-4. `npm run dev`
-5. Open http://localhost:3000
+3. `npm run dev`
+4. Open http://localhost:3000
 
 > Chain ID 4663, RPC URLs, and stablecoin addresses must be confirmed against Robinhood Chain's official docs and kept in env (never hardcoded), since testnet and mainnet values differ.
 
@@ -56,5 +46,4 @@ This Next.js 16 App Router implementation follows [`RobinPay — Technical Archi
 - `npm run dev` — dev server
 - `npm run build` — production build
 - `npm run lint` — eslint
-- `npx prisma generate` — generate Prisma client
-- `npx prisma db push` — push schema to database
+- `npm run test` — vitest (stateless auth / invoice / session / webhook modules)

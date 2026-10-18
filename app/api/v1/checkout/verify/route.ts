@@ -1,120 +1,86 @@
 // =============================================================================
 // app/api/v1/checkout/verify/route.ts
 // =============================================================================
-// Verifies a payment by transaction hash and fires merchant webhooks.
-// Trusts the chain, not the client. Re-derives everything from the receipt.
-// Auth: pk_ key with a checkout session token, or sk_ key.
-// Body: { invoiceId: string, txHash: 0x... }
+// Verifies a payment by transaction hash. Derives everything from the receipt
+// and the signed invoice token; writes nothing to any database.
+// Auth: optional sk_ key. When present, fires the merchant webhook inline.
+// Body: { token (signed invoice token), txHash }
+// Returns { status: 'PAID' | 'PENDING', txHash, orderId }
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { isHex, type Hex } from 'viem';
-import { prisma } from '@/lib/db';
-import { authenticate } from '@/lib/auth/api-keys';
-import { validateCheckoutSession } from '@/lib/auth/session';
-import { enqueueAndDispatch } from '@/lib/webhooks/dispatch';
-import { verifyPayment } from '@/lib/payments/verify';
+import { authenticate } from '@/lib/auth/stateless';
+import { parseInvoiceToken, invoiceTokenToOrderId } from '@/lib/invoice/token';
+import { verifyPaymentTx } from '@/lib/payments/status';
+import { sendWebhook } from '@/lib/webhooks/send';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Body = z.object({
-  invoiceId: z.string().min(1),
+  token: z.string().min(1),
   txHash: z.string().refine((v): v is Hex => isHex(v) && v.length === 66),
-  sessionToken: z.string().optional(),
 });
 
 const fail = (code: string, message: string, status = 400) =>
   NextResponse.json({ error: { code, message } }, { status });
 
 export async function POST(req: Request) {
-  const auth = await authenticate(req);
-  if (!auth) return fail('UNAUTHORIZED', 'Invalid API key', 401);
+  // Optional sk_ auth for server-side verification + webhook firing.
+  let auth: { merchant: string; webhookUrl?: string } | null = null;
+  const header = req.headers.get('authorization') ?? '';
+  const bearerToken = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+  if (bearerToken) {
+    const result = await authenticate(req);
+    if (result) auth = { merchant: result.merchant, webhookUrl: result.webhookUrl };
+  }
 
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return fail('BAD_REQUEST', parsed.error.message);
-  const { invoiceId, txHash, sessionToken } = parsed.data;
+  const { token: invoiceToken, txHash } = parsed.data;
 
-  const invoice = await prisma.invoice.findUnique({ where: { id: invoiceId } });
-  if (!invoice || invoice.merchantId !== auth.merchantId) return fail('NOT_FOUND', 'Invoice not found', 404);
-  if (invoice.status === 'PAID') return NextResponse.json({ status: 'PAID', invoiceId, txHash }); // idempotent
-  if (invoice.status !== 'UNPAID') return fail('INVALID_STATE', 'Invoice is ' + invoice.status, 409);
-  if (invoice.expiresAt && invoice.expiresAt < new Date()) return fail('EXPIRED', 'Invoice expired', 410);
+  const invoice = parseInvoiceToken(invoiceToken);
+  if (!invoice) return fail('INVALID_TOKEN', 'Invalid or expired invoice token', 400);
 
-  // pk_ calls must present a valid, unused checkout session bound to this invoice
-  if (!auth.isSecret) {
-    if (!sessionToken) return fail('BAD_REQUEST', 'sessionToken required for public key', 400);
-    const session = await validateCheckoutSession(sessionToken);
-    if (!session || session.invoiceId !== invoice.id || session.merchantId !== auth.merchantId) {
-      return fail('INVALID_SESSION', 'Invalid or expired checkout session', 403);
-    }
-  }
+  const orderId = invoiceTokenToOrderId(invoiceToken);
 
   let verified;
   try {
-    verified = await verifyPayment({
+    verified = await verifyPaymentTx({
       txHash,
-      orderId: invoice.orderId as `0x${string}`,
-      merchantWallet: (
-        await prisma.merchant.findUniqueOrThrow({ where: { id: invoice.merchantId } })
-      ).walletAddress,
-      tokenAddress: invoice.tokenAddress,
-      minAmount: BigInt(invoice.amount.toFixed(0)),
+      orderId,
+      merchantWallet: invoice.merchant,
+      tokenAddress: invoice.token,
+      minAmount: BigInt(invoice.amount),
     });
   } catch (err) {
     const msg = String(err);
     if (msg.startsWith('PENDING:')) {
-      return NextResponse.json({ status: 'PENDING', invoiceId, txHash }, { status: 202 });
+      return NextResponse.json({ status: 'PENDING', txHash, orderId }, { status: 202 });
     }
     return fail(msg.split(':')[0], msg, 400);
   }
 
-  const event = await prisma.$transaction(async (tx) => {
-    const customer = await tx.customer.upsert({
-      where: { walletAddress: verified.payer.toLowerCase() },
-      create: { walletAddress: verified.payer.toLowerCase() },
-      update: {},
-    });
-    await tx.payment.create({
-      data: {
-        invoiceId: invoice.id,
-        customerId: customer.id,
-        txHash: verified.txHash,
-        logIndex: verified.logIndex,
-        blockNumber: verified.blockNumber,
-        payer: verified.payer.toLowerCase(),
-        gross: verified.gross.toString(),
-        fee: verified.fee.toString(),
-        net: verified.net.toString(),
+  // Fire the webhook inline when server-side auth is available.
+  if (auth?.webhookUrl) {
+    void sendWebhook({
+      merchant: invoice.merchant,
+      url: auth.webhookUrl,
+      event: {
+        type: 'payment.succeeded',
+        merchant: invoice.merchant,
+        data: {
+          eventId: 'evt_' + crypto.randomUUID().replace(/-/g, '').slice(0, 24),
+          orderId,
+          externalRef: invoice.externalRef,
+          txHash,
+          amount: verified.gross.toString(),
+          token: verified.token,
+          payer: verified.payer,
+        },
       },
     });
-    await tx.invoice.update({
-      where: { id: invoice.id },
-      data: { status: 'PAID', paidAt: new Date(), customerId: customer.id },
-    });
-    if (!auth.isSecret && sessionToken) {
-      await tx.checkoutSession.update({
-        where: { token: sessionToken },
-        data: { usedAt: new Date() },
-      });
-    }
-    return {
-      type: 'payment.succeeded',
-      merchantId: invoice.merchantId,
-      data: {
-        eventId: 'evt_' + crypto.randomUUID().replace(/-/g, '').slice(0, 24),
-        invoiceId: invoice.id,
-        orderId: invoice.orderId,
-        externalRef: invoice.externalRef,
-        txHash: verified.txHash,
-        amount: verified.gross.toString(),
-        token: verified.token,
-        payer: verified.payer,
-      },
-    };
-  });
+  }
 
-  // Fire-and-forget; failures are retried by /api/cron/retry-webhooks
-  void enqueueAndDispatch(event);
-
-  return NextResponse.json({ status: 'PAID', invoiceId, txHash });
+  return NextResponse.json({ status: 'PAID', txHash, orderId });
 }

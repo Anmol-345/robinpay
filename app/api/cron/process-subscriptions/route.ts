@@ -1,16 +1,16 @@
 // =============================================================================
 // app/api/cron/process-subscriptions/route.ts
 // =============================================================================
-// Vercel Cron: selects due subscriptions, leases them to prevent double-processing,
-// simulates claimBatch, submits with the operator key, and persists results.
-// Secured with CRON_SECRET (constant-time compare).
+// Vercel Cron: reads due subscription ids from the SubscriptionVault contract,
+// simulates claimBatch, submits with the operator key, and decodes Charged /
+// ChargeFailed logs from the receipt. No lease or lockedUntil logic; the
+// on-chain NotDue check is the final backstop. Secured with CRON_SECRET.
 import { NextResponse } from 'next/server';
 import { timingSafeEqual } from 'node:crypto';
-import { prisma } from '@/lib/db';
+import { decodeEventLog, type Hex } from 'viem';
 import { publicClient, operatorWallet } from '@/lib/chain/client';
 import { SUBSCRIPTION_VAULT_ABI } from '@/lib/chain/client';
 import { env } from '@/lib/env';
-import { enqueueAndDispatch } from '@/lib/webhooks/dispatch';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -24,86 +24,68 @@ function authorized(req: Request) {
   return got.length === want.length && timingSafeEqual(got, want);
 }
 
+interface ChargeResult {
+  subId: bigint;
+  ok: boolean;
+  amount?: bigint;
+  fee?: bigint;
+  nextChargeAt?: bigint;
+  failedAttempts?: number;
+  reason?: string;
+}
+
 export async function GET(req: Request) {
   if (!authorized(req)) return new NextResponse('Unauthorized', { status: 401 });
 
-  const now = new Date();
-  const lease = new Date(now.getTime() + 5 * 60_000);
+  // 1) Read due subscription ids from the contract (paginated, offset 0).
+  const due = (await publicClient().readContract({
+    address: env().SUBSCRIPTION_VAULT_ADDRESS as `0x${string}`,
+    abi: SUBSCRIPTION_VAULT_ABI,
+    functionName: 'getDueSubscriptions',
+    args: [0n, BigInt(BATCH)],
+  })) as bigint[];
 
-  // 1) Lease a batch atomically (SKIP LOCKED avoids contention between runs)
-  const due = await prisma.$queryRaw<{ id: string; onchainSubId: string }[]>`
-    UPDATE "Subscription" SET "lockedUntil" = ${lease}
-    WHERE id IN (
-      SELECT id FROM "Subscription"
-      WHERE status IN ('ACTIVE','TRIALING','PAST_DUE')
-        AND "nextChargeAt" <= ${now}
-        AND ("lockedUntil" IS NULL OR "lockedUntil" < ${now})
-      ORDER BY "nextChargeAt" ASC
-      LIMIT ${BATCH}
-      FOR UPDATE SKIP LOCKED
-    )
-    RETURNING id, "onchainSubId"::text AS "onchainSubId"`;
   if (due.length === 0) return NextResponse.json({ processed: 0 });
 
-  const subIds = due.map((d) => BigInt(d.onchainSubId));
-
   try {
-    // 2) Simulate first: catches reverts and estimates gas without spending it
-    const { request, result } = await publicClient().simulateContract({
+    // 2) Simulate first: catches reverts and estimates gas without spending it.
+    const { request } = await publicClient().simulateContract({
       address: env().SUBSCRIPTION_VAULT_ADDRESS as `0x${string}`,
       abi: SUBSCRIPTION_VAULT_ABI,
       functionName: 'claimBatch',
-      args: [subIds],
+      args: [due as bigint[]],
       account: operatorWallet().account,
     });
 
-    // 3) Submit and wait for confirmation
+    // 3) Submit and wait for confirmation.
     const hash = await operatorWallet().writeContract(request);
-    await publicClient().waitForTransactionReceipt({ hash });
+    const receipt = await publicClient().waitForTransactionReceipt({ hash });
 
-    // 4) Persist results per subscription
-    for (let i = 0; i < due.length; i++) {
-      const ok = result[i];
-      const sub = await prisma.subscription.findUniqueOrThrow({ where: { id: due[i].id }, include: { plan: true } });
-      if (ok) {
-        const next = new Date(sub.nextChargeAt.getTime() + sub.plan.intervalSecs * 1000);
-        await prisma.$transaction([
-          prisma.subscription.update({
-            where: { id: sub.id },
-            data: { nextChargeAt: next, chargesMade: { increment: 1 }, failedAttempts: 0, status: 'ACTIVE', lockedUntil: null },
-          }),
-          prisma.subscriptionCharge.create({ data: { subscriptionId: sub.id, status: 'SUCCEEDED', amount: sub.plan.amount, txHash: hash } }),
-        ]);
-        void enqueueAndDispatch({
-          type: 'subscription.charged',
-          merchantId: sub.merchantId,
-          data: { eventId: 'evt_' + crypto.randomUUID().replace(/-/g, '').slice(0, 24), subscriptionId: sub.id, txHash: hash },
+    // 4) Decode Charged / ChargeFailed logs from the receipt.
+    const results: ChargeResult[] = [];
+
+    for (const log of receipt.logs) {
+      if (log.address.toLowerCase() !== env().SUBSCRIPTION_VAULT_ADDRESS.toLowerCase()) continue;
+      try {
+        const ev = decodeEventLog({
+          abi: SUBSCRIPTION_VAULT_ABI,
+          data: log.data as Hex,
+          topics: log.topics as unknown as [] | [`0x${string}`, ...`0x${string}`[]],
         });
-      } else {
-        const attempts = sub.failedAttempts + 1;
-        await prisma.$transaction([
-          prisma.subscription.update({
-            where: { id: sub.id },
-            data: {
-              failedAttempts: attempts,
-              status: attempts >= 3 ? 'PAST_DUE' : sub.status,
-              nextChargeAt: new Date(Date.now() + 24 * 3600_000),
-              lockedUntil: null,
-            },
-          }),
-          prisma.subscriptionCharge.create({ data: { subscriptionId: sub.id, status: 'FAILED', amount: sub.plan.amount, failureReason: 'allowance_or_balance' } }),
-        ]);
-        void enqueueAndDispatch({
-          type: 'subscription.payment_failed',
-          merchantId: sub.merchantId,
-          data: { eventId: 'evt_' + crypto.randomUUID().replace(/-/g, '').slice(0, 24), subscriptionId: sub.id, attempts },
-        });
+        if (ev.eventName === 'Charged') {
+          const args = ev.args as unknown as { subId: bigint; amount: bigint; fee: bigint; nextChargeAt: bigint };
+          results.push({ subId: args.subId, ok: true, amount: args.amount, fee: args.fee, nextChargeAt: args.nextChargeAt });
+        } else if (ev.eventName === 'ChargeFailed') {
+          const args = ev.args as unknown as { subId: bigint; failedAttempts: number; reason: Hex };
+          results.push({ subId: args.subId, ok: false, failedAttempts: args.failedAttempts, reason: args.reason });
+        }
+      } catch {
+        /* not our event */
       }
     }
-    return NextResponse.json({ processed: due.length, txHash: hash });
+
+    return NextResponse.json({ processed: due.length, txHash: hash, results });
   } catch (err) {
-    // Release leases so the next run can retry
-    await prisma.subscription.updateMany({ where: { id: { in: due.map((d) => d.id) } }, data: { lockedUntil: null } });
     console.error('process-subscriptions failed', err);
     return NextResponse.json({ error: 'batch_failed' }, { status: 500 });
   }
