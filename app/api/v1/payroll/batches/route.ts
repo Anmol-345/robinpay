@@ -5,12 +5,12 @@
 // Nothing is persisted server-side. The client sends batchPayToken /
 // batchPayNative per chunk from the user's wallet.
 // Auth: sk_ key.
-import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { parse } from 'papaparse';
 import { isAddress, keccak256, toHex, parseUnits } from 'viem';
 import { getToken } from '@/lib/chain/tokens';
 import { checkInvoiceRateLimit, getClientIp } from '@/lib/rate-limit';
+import { jsonWithCorsApp } from '@/lib/cors';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -25,7 +25,7 @@ const Body = z.object({
 });
 
 const fail = (code: string, message: string, status = 400) =>
-  NextResponse.json({ error: { code, message } }, { status });
+  jsonWithCorsApp({ error: { code, message } }, { status });
 
 export async function POST(req: Request) {
   // Rate limit by IP + merchant
@@ -86,7 +86,7 @@ export async function POST(req: Request) {
     });
   }
 
-  return NextResponse.json({
+  return jsonWithCorsApp({
     batchId,
     token: token.symbol,
     tokenAddress: token.address,

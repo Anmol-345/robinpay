@@ -5,15 +5,15 @@
 // Query: ?address=0x...
 // No storage required — the nonce embeds the address and timestamp, signed
 // with HMAC(SESSION_SECRET). Valid for 5 minutes.
-import { NextResponse } from 'next/server';
 import { isAddress } from 'viem';
 import { createNonce } from '@/lib/auth/nonce';
+import { jsonWithCorsPublic } from '@/lib/cors';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const fail = (code: string, message: string, status = 400) =>
-  NextResponse.json({ error: { code, message } }, { status });
+  jsonWithCorsPublic({ error: { code, message } }, { status });
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -26,12 +26,11 @@ export async function GET(req: Request) {
   const nonce = createNonce(address);
   const issuedAt = new Date().toISOString();
 
-  return NextResponse.json({
+  return jsonWithCorsPublic({
     nonce,
     address: address.toLowerCase(),
     issuedAt,
     chainId: 4663,
-    // Nonce expires in 5 minutes
     expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
   });
 }

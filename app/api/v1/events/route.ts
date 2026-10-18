@@ -4,18 +4,18 @@
 // Pull missed events for a merchant. PUBLIC, read-only endpoint.
 // Query: ?merchant=0x...&since=<blockNumber>&type=payment.succeeded|...
 // Reads router / vault / escrow logs from the blockchain; nothing persisted.
-import { NextResponse } from 'next/server';
 import { decodeEventLog, type Hex, isAddress } from 'viem';
 import { publicClient } from '@/lib/chain/client';
 import { ROUTER_ABI } from '@/lib/chain/client';
 import { env } from '@/lib/env';
 import { checkEventsRateLimit, getClientIp } from '@/lib/rate-limit';
+import { jsonWithCorsPublic } from '@/lib/cors';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const fail = (code: string, message: string, status = 400) =>
-  NextResponse.json({ error: { code, message } }, { status });
+  jsonWithCorsPublic({ error: { code, message } }, { status });
 
 const SCAN_WINDOW = 5000; // blocks per request
 
@@ -102,7 +102,7 @@ export async function GET(req: Request) {
     addLogs(routerLogs as unknown as LogEntry[], 'PaymentProcessed');
   }
 
-  return NextResponse.json({ events, fromBlock: fromBlock.toString(), head: head.toString() });
+  return jsonWithCorsPublic({ events, fromBlock: fromBlock.toString(), head: head.toString() });
 }
 
 // Heuristic: match any indexed address argument to the merchant.

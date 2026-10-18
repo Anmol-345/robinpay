@@ -6,13 +6,13 @@
 // nothing to any database.
 // Body: { token (signed invoice token), txHash }
 // Returns { status: 'PAID' | 'PENDING', txHash, orderId, verified }
-import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { isHex, type Hex } from 'viem';
 import { parseInvoiceToken, invoiceTokenToOrderId } from '@/lib/invoice/token';
 import { verifyPaymentTx } from '@/lib/payments/status';
 import { parseWebhookConfigToken } from '@/lib/eip712';
 import { sendWebhook } from '@/lib/webhooks/send';
+import { jsonWithCorsPublic } from '@/lib/cors';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -23,7 +23,7 @@ const Body = z.object({
 });
 
 const fail = (code: string, message: string, status = 400) =>
-  NextResponse.json({ error: { code, message } }, { status });
+  jsonWithCorsPublic({ error: { code, message } }, { status });
 
 export async function POST(req: Request) {
   const parsed = Body.safeParse(await req.json().catch(() => null));
@@ -47,7 +47,7 @@ export async function POST(req: Request) {
   } catch (err) {
     const msg = String(err);
     if (msg.startsWith('PENDING:')) {
-      return NextResponse.json({ status: 'PENDING', txHash, orderId }, { status: 202 });
+      return jsonWithCorsPublic({ status: 'PENDING', txHash, orderId }, { status: 202 });
     }
     return fail(msg.split(':')[0], msg, 400);
   }
@@ -76,5 +76,5 @@ export async function POST(req: Request) {
     }
   }
 
-  return NextResponse.json({ status: 'PAID', txHash, orderId, verified: invoice.verified });
+  return jsonWithCorsPublic({ status: 'PAID', txHash, orderId, verified: invoice.verified });
 }

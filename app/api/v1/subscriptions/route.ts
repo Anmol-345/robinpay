@@ -4,19 +4,19 @@
 // Subscription plan management. Plans live on-chain via SubscriptionVault; this
 // endpoint is a thin stateless helper. PUBLIC endpoint — merchant address in
 // body identifies the caller. No database writes.
-import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { isAddress } from 'viem';
 import { checkInvoiceRateLimit, getClientIp } from '@/lib/rate-limit';
+import { jsonWithCorsApp } from '@/lib/cors';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const fail = (code: string, message: string, status = 400) =>
-  NextResponse.json({ error: { code, message } }, { status });
+  jsonWithCorsApp({ error: { code, message } }, { status });
 
 export async function GET() {
-  return NextResponse.json({
+  return jsonWithCorsApp({
     plans: [],
     note: 'Plans and subscriptions are stored on-chain in SubscriptionVault. Query the contract directly.',
   });
@@ -47,7 +47,7 @@ export async function POST(req: Request) {
     );
   }
 
-  return NextResponse.json(
+  return jsonWithCorsApp(
     {
       plan: {
         merchant: merchantParam.toLowerCase(),

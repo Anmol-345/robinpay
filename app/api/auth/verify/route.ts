@@ -5,11 +5,11 @@
 // Verifies the SIWE signature against the address embedded in the message,
 // validates the nonce (HMAC-signed, 5-minute TTL), then sets a signed
 // httpOnly session cookie (rp_session) containing the address and expiry.
-import { NextResponse } from 'next/server';
 import { verifyMessage, type Hex } from 'viem';
 import { z } from 'zod';
 import { verifyNonce } from '@/lib/auth/nonce';
 import { signSession } from '@/lib/auth/siwe';
+import { corsHeadersAppOrigin } from '@/lib/cors';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -17,8 +17,14 @@ export const dynamic = 'force-dynamic';
 const DOMAIN = process.env.NEXT_PUBLIC_APP_URL ?? 'localhost:3000';
 const HOST = DOMAIN.replace(/^https?:\/\//, '');
 
-const fail = (code: string, message: string, status = 400) =>
-  NextResponse.json({ error: { code, message } }, { status });
+const fail = (code: string, message: string, status = 400): Response =>
+  new Response(JSON.stringify({ error: { code, message } }), {
+    status,
+    headers: {
+      'Content-Type': 'application/json',
+      ...corsHeadersAppOrigin(),
+    },
+  });
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
@@ -34,13 +40,13 @@ export async function POST(req: Request) {
     };
     const cookieValue = signSession(session);
 
-    const response = NextResponse.json({ ok: true, address: demoAddress });
-    response.cookies.set('rp_session', cookieValue, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 7 * 24 * 60 * 60,
+    const response = new Response(JSON.stringify({ ok: true, address: demoAddress }), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        ...corsHeadersAppOrigin(),
+        'Set-Cookie': `rp_session=${cookieValue}; HttpOnly; Path=/; Max-Age=${7 * 24 * 60 * 60}${process.env.NODE_ENV === 'production' ? '; Secure' : ''}; SameSite=Lax`,
+      },
     });
     return response;
   }
@@ -108,13 +114,13 @@ export async function POST(req: Request) {
   };
   const cookieValue = signSession(session);
 
-  const response = NextResponse.json({ ok: true, address });
-  response.cookies.set('rp_session', cookieValue, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 7 * 24 * 60 * 60,
+  const response = new Response(JSON.stringify({ ok: true, address }), {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/json',
+      ...corsHeadersAppOrigin(),
+      'Set-Cookie': `rp_session=${cookieValue}; HttpOnly; Path=/; Max-Age=${7 * 24 * 60 * 60}${process.env.NODE_ENV === 'production' ? '; Secure' : ''}; SameSite=Lax`,
+    },
   });
   return response;
 }

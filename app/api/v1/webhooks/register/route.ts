@@ -7,10 +7,10 @@
 // passes in the SDK/invoice create call as 'webhookToken'. No registry needed.
 // SSRF protected: https only, blocks private/loopback/link-local IPs, no
 // redirects, response size capped.
-import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { isAddress } from 'viem';
 import { verifyWebhookConfigSignature, createWebhookConfigToken } from '@/lib/eip712';
+import { jsonWithCorsApp } from '@/lib/cors';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -19,7 +19,7 @@ const MAX_EVENTS_LENGTH = 200;
 const DEFAULT_EXPIRY_SECONDS = 30 * 24 * 60 * 60; // 30 days
 
 const fail = (code: string, message: string, status = 400) =>
-  NextResponse.json({ error: { code, message } }, { status });
+  jsonWithCorsApp({ error: { code, message } }, { status });
 
 // SSRF protection: check that URL is HTTPS and not pointing to private/loopback/link-local.
 function isSsrSafeUrl(url: string): boolean {
@@ -102,7 +102,7 @@ export async function POST(req: Request) {
     expiry: Math.floor(Date.now() / 1000) + expiry,
   });
 
-  return NextResponse.json({
+  return jsonWithCorsApp({
     token,
     merchant: merchant.toLowerCase(),
     url,

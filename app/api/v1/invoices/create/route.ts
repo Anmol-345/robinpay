@@ -6,7 +6,6 @@
 // Body: { merchant, amount, token, description?, externalRef?, metadata?,
 //         expiresInMinutes?, escrow?, signature?, webhookToken? }
 // Returns { url, orderId, token, verified }. orderId = keccak256(token).
-import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { keccak256, toHex, parseUnits, isAddress } from 'viem';
 import { createInvoiceToken } from '@/lib/invoice/token';
@@ -14,6 +13,7 @@ import { verifyInvoiceSignature } from '@/lib/eip712';
 import { getToken } from '@/lib/chain/tokens';
 import { env } from '@/lib/env';
 import { checkInvoiceRateLimit, getClientIp } from '@/lib/rate-limit';
+import { jsonWithCorsPublic } from '@/lib/cors';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -50,7 +50,7 @@ const Body = z.object({
 });
 
 const fail = (code: string, message: string, status = 400) =>
-  NextResponse.json({ error: { code, message } }, { status });
+  jsonWithCorsPublic({ error: { code, message } }, { status });
 
 export async function POST(req: Request) {
   // Rate limit by IP (+ merchant if provided after parse)
@@ -143,5 +143,5 @@ export async function POST(req: Request) {
   const orderId = keccak256(toHex(invoiceToken)) as `0x${string}`;
   const url = env().NEXT_PUBLIC_APP_URL + '/pay/' + invoiceToken;
 
-  return NextResponse.json({ url, orderId, token: invoiceToken, verified }, { status: 201 });
+  return jsonWithCorsPublic({ url, orderId, token: invoiceToken, verified }, { status: 201 });
 }
