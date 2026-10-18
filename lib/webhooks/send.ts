@@ -85,8 +85,10 @@ export async function sendWebhook({
       },
       body: rawBody,
       signal: AbortSignal.timeout(env().WEBHOOK_TIMEOUT_MS),
+      redirect: 'manual', // SSRF: never follow redirects
     });
     const ok = res.status >= 200 && res.status < 300;
+    // Cap response body to 2KB to prevent memory exhaustion.
     const responseText = await res.text().catch(() => '');
     return { ok, statusCode: res.status, body: responseText.slice(0, 2048) };
   } catch (err) {
