@@ -1,0 +1,294 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ---------- Enums ----------
+enum Environment {
+  LIVE
+  TEST
+}
+enum InvoiceStatus {
+  DRAFT
+  UNPAID
+  PAID
+  IN_ESCROW
+  DISPUTED
+  REFUNDED
+  EXPIRED
+  CANCELLED
+}
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAUSED
+  PAST_DUE
+  CANCELLED
+}
+enum ChargeStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+}
+enum WebhookStatus {
+  PENDING
+  DELIVERED
+  FAILED
+  DEAD
+}
+enum PayoutStatus {
+  DRAFT
+  SUBMITTED
+  CONFIRMED
+  FAILED
+}
+
+// ---------- Merchant ----------
+model Merchant {
+  id            String   @id @default(cuid())
+  name          String
+  email         String   @unique
+  walletAddress String   // payout wallet, lowercase 0x
+  feeBpsOverride Int?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  apiKeys          ApiKey[]
+  webhookEndpoints WebhookEndpoint[]
+  invoices         Invoice[]
+  plans            Plan[]
+  subscriptions    Subscription[]
+  payrollBatches   PayrollBatch[]
+  webhookLogs      WebhookLog[]
+  checkoutSessions CheckoutSession[]
+
+  @@index([walletAddress])
+}
+
+model ApiKey {
+  id          String      @id @default(cuid())
+  merchantId  String
+  merchant    Merchant    @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  environment Environment
+  label       String?
+  publicKey   String      @unique // pk_live_xxx (not secret)
+  secretHash  String      @unique // SHA-256 of sk_live_xxx
+  secretLast4 String      // display only
+  scopes      String[]
+  lastUsedAt  DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime    @default(now())
+
+  @@index([merchantId])
+}
+
+model WebhookEndpoint {
+  id              String   @id @default(cuid())
+  merchantId      String
+  merchant        Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  url             String
+  secretEncrypted String   // AES-256-GCM encrypted whsec_xxx
+  events          String[] // e.g. payment.succeeded, subscription.charged
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+
+  logs WebhookLog[]
+
+  @@index([merchantId])
+}
+
+model CheckoutSession {
+  id        String   @id @default(cuid())
+  token     String   @unique // rp_sess_xxx, short-lived
+  merchantId String
+  merchant  Merchant @relation(fields: [merchantId], references: [id])
+  invoiceId String
+  origin    String   // browser origin, for origin restriction
+  usedAt    DateTime?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([merchantId])
+  @@index([invoiceId])
+  @@index([expiresAt])
+}
+
+// ---------- Customer ----------
+model Customer {
+  id            String   @id @default(cuid())
+  walletAddress String   @unique // lowercase 0x
+  email         String?
+  createdAt     DateTime @default(now())
+
+  subscriptions Subscription[]
+  invoices      Invoice[]
+  payments      Payment[]
+}
+
+// ---------- Invoice / Checkout ----------
+model Invoice {
+  id            String        @id @default(cuid()) // public: /pay/[id]
+  merchantId    String
+  merchant      Merchant      @relation(fields: [merchantId], references: [id])
+  customerId    String?
+  customer      Customer?     @relation(fields: [customerId], references: [id])
+  orderId       String        @unique // bytes32 hex used on-chain
+  externalRef   String?       // merchant's own order id
+  description   String?
+  tokenAddress  String        // 0x000..0 = native
+  tokenSymbol   String
+  tokenDecimals Int
+  amount        Decimal       @db.Decimal(78, 0)
+  status        InvoiceStatus @default(UNPAID)
+  escrowEnabled Boolean       @default(false)
+  escrowId      Decimal?      @db.Decimal(78, 0)
+  milestones    Json?         // [{title, amount, releaseDeadline}]
+  metadata      Json?         // dynamic merchant key/value data
+  successUrl    String?
+  cancelUrl     String?
+  expiresAt     DateTime?
+  paidAt        DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  payments Payment[]
+
+  @@index([merchantId, status])
+  @@index([expiresAt])
+}
+
+model Payment {
+  id          String   @id @default(cuid())
+  invoiceId   String?
+  invoice     Invoice? @relation(fields: [invoiceId], references: [id])
+  customerId  String?
+  customer    Customer? @relation(fields: [customerId], references: [id])
+  txHash      String
+  logIndex    Int
+  blockNumber BigInt
+  payer       String
+  gross       Decimal  @db.Decimal(78, 0)
+  fee         Decimal  @db.Decimal(78, 0)
+  net         Decimal  @db.Decimal(78, 0)
+  confirmedAt DateTime @default(now())
+
+  @@unique([txHash, logIndex]) // idempotent verification
+  @@index([invoiceId])
+}
+
+// ---------- Subscriptions ----------
+model Plan {
+  id            String   @id @default(cuid())
+  merchantId    String
+  merchant      Merchant @relation(fields: [merchantId], references: [id])
+  onchainPlanId Decimal  @db.Decimal(78, 0)
+  name          String
+  tokenAddress  String
+  amount        Decimal  @db.Decimal(78, 0)
+  intervalSecs  Int
+  trialSecs     Int      @default(0)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  subscriptions Subscription[]
+
+  @@unique([merchantId, onchainPlanId])
+}
+
+model Subscription {
+  id             String             @id @default(cuid())
+  merchantId     String
+  merchant       Merchant           @relation(fields: [merchantId], references: [id])
+  planId         String
+  plan           Plan               @relation(fields: [planId], references: [id])
+  customerId     String
+  customer       Customer           @relation(fields: [customerId], references: [id])
+  onchainSubId   Decimal            @unique @db.Decimal(78, 0)
+  status         SubscriptionStatus @default(ACTIVE)
+  nextChargeAt   DateTime
+  chargesMade    Int                @default(0)
+  maxCharges     Int                @default(0)
+  failedAttempts Int                @default(0)
+  lifetimeCap    Decimal?           @db.Decimal(78, 0)
+  totalCharged   Decimal            @default(0) @db.Decimal(78, 0)
+  allowanceOk    Boolean            @default(true) // last known allowance >= amount
+  lockedUntil    DateTime?          // cron lease to prevent double-processing
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  charges SubscriptionCharge[]
+
+  @@index([status, nextChargeAt]) // hot path for the cron query
+  @@index([merchantId])
+}
+
+model SubscriptionCharge {
+  id             String       @id @default(cuid())
+  subscriptionId String
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  status         ChargeStatus
+  amount         Decimal      @db.Decimal(78, 0)
+  txHash         String?
+  failureReason  String?
+  attemptedAt    DateTime     @default(now())
+
+  @@index([subscriptionId])
+}
+
+// ---------- Payroll ----------
+model PayrollBatch {
+  id           String       @id @default(cuid())
+  merchantId   String
+  merchant     Merchant     @relation(fields: [merchantId], references: [id])
+  label        String?
+  tokenAddress String
+  totalAmount  Decimal      @db.Decimal(78, 0)
+  status       PayoutStatus @default(DRAFT)
+  createdAt    DateTime     @default(now())
+
+  items PayrollItem[]
+
+  @@index([merchantId])
+}
+
+model PayrollItem {
+  id         String       @id @default(cuid())
+  batchId    String
+  batch      PayrollBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  chunkIndex Int          @default(0)
+  recipient  String
+  amount     Decimal      @db.Decimal(78, 0)
+  memo       String?
+  txHash     String?
+  status     PayoutStatus @default(DRAFT)
+
+  @@index([batchId, chunkIndex])
+}
+
+// ---------- Webhooks ----------
+model WebhookLog {
+  id           String          @id @default(cuid())
+  merchantId   String
+  merchant     Merchant        @relation(fields: [merchantId], references: [id])
+  endpointId   String
+  endpoint     WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  eventId      String          @unique // evt_xxx, stable across retries
+  eventType    String          // payment.succeeded, subscription.charged ...
+  payload      Json
+  status       WebhookStatus   @default(PENDING)
+  statusCode   Int?
+  responseBody String?         // truncated to 2KB
+  retryCount   Int             @default(0)
+  nextRetryAt  DateTime?
+  createdAt    DateTime        @default(now())
+  deliveredAt  DateTime?
+
+  @@index([status, nextRetryAt])
+  @@index([merchantId, createdAt])
+}
