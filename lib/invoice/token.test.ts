@@ -17,7 +17,20 @@ describe('stateless invoice tokens', () => {
     expect(token).toMatch(/^inv_[^.]+\.[0-9a-f]+$/);
 
     const parsed = parseInvoiceToken(token);
+    expect(parsed).not.toBeNull();
     expect(parsed).toMatchObject(payload);
+  });
+
+  it('supports verified and webhookToken fields', () => {
+    const token = createInvoiceToken({
+      ...payload,
+      verified: true,
+      webhookToken: 'whc_abc123.def456',
+    });
+    const parsed = parseInvoiceToken(token);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.verified).toBe(true);
+    expect(parsed!.webhookToken).toBe('whc_abc123.def456');
   });
 
   it('derives orderId = keccak256(token)', () => {
