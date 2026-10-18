@@ -7,7 +7,8 @@
 import { NextResponse } from 'next/server';
 import { verifyMessage, type Hex } from 'viem';
 import { z } from 'zod';
-import { buildSiweMessage, setSessionCookie } from '@/lib/auth/siwe';
+import { cookies } from 'next/headers';
+import { verifySession, buildSiweMessage, setSessionCookie } from '@/lib/auth/siwe';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -18,17 +19,23 @@ const HOST = DOMAIN.replace(/^https?:\/\//, '');
 const fail = (code: string, message: string, status = 400) =>
   NextResponse.json({ error: { code, message } }, { status });
 
-// GET: return a nonce + domain for the client to build a SIWE message.
+// GET: return session status + nonce & domain for the client to build a SIWE message.
 export async function GET() {
+  const cookieStore = await cookies();
+  const token = cookieStore.get('rp_session')?.value;
+  const currentSession = token ? verifySession(token) : null;
+
   const nonce = crypto.randomUUID();
   const issuedAt = new Date().toISOString();
   return NextResponse.json({
+    authenticated: !!currentSession,
+    address: currentSession?.address ?? null,
     nonce,
     domain: HOST,
     chainId: 4663,
     issuedAt,
     message: buildSiweMessage({
-      address: '0x', // placeholder; client fills in
+      address: (currentSession?.address as `0x${string}`) ?? '0x',
       chainId: 4663,
       nonce,
       issuedAt,
@@ -37,9 +44,27 @@ export async function GET() {
   });
 }
 
-// POST: verify SIWE signature, set signed httpOnly session cookie.
+// POST: verify SIWE signature or demo login, set signed httpOnly session cookie.
 export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
+
+  // Allow simulated demo merchant connection for environments without MetaMask
+  if (body?.demo === true) {
+    const demoAddress = (body?.address ?? '0x71c836643f37711fa49b560ab993466170ce6439').toLowerCase() as `0x${string}`;
+    const session = { address: demoAddress, chainId: 4663, iat: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID() };
+    const cookieValue = setSessionCookie(session);
+
+    const response = NextResponse.json({ ok: true, address: demoAddress });
+    response.cookies.set('rp_session', cookieValue, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 7 * 24 * 60 * 60,
+    });
+    return response;
+  }
+
   const parsed = z
     .object({
       message: z.string(),
@@ -56,6 +81,7 @@ export async function POST(req: Request) {
   if (!addressLine || !addressLine.startsWith('0x')) {
     return fail('INVALID_MESSAGE', 'SIWE message missing address', 401);
   }
+
 
   // Recover / confirm the signer by verifying the signature against the address.
   let isValid = false;

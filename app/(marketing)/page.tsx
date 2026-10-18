@@ -22,8 +22,37 @@ import {
   X,
   Percent,
 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
+import { WalletConnectModal } from '@/components/auth/WalletConnectModal';
 
 export default function MarketingPage() {
+  const router = useRouter();
+
+  // Wallet Connection & Auth State
+  const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
+  const [merchantAddress, setMerchantAddress] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Check if merchant already has an active SIWE session
+    fetch('/api/auth/session', { cache: 'no-store' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.authenticated && data?.address) {
+          setMerchantAddress(data.address);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleGetApiKey = () => {
+    if (merchantAddress) {
+      router.push('/dashboard');
+    } else {
+      setIsWalletModalOpen(true);
+    }
+  };
+
   // Interactive Checkout Demo State
   const [demoState, setDemoState] = useState<'idle' | 'signing' | 'broadcasting' | 'confirmed'>('idle');
   const [copiedCode, setCopiedCode] = useState(false);
@@ -151,15 +180,32 @@ export async function batchDisburse(recipients) {
 
           {/* Nav Actions */}
           <div className="flex items-center gap-3">
-            <a
-              href="/dashboard"
-              className="sketch-btn sketch-border px-4 py-1.5 bg-white text-[#0A0A0A] border-2 border-[#0A0A0A] font-mono text-xs sm:text-sm font-medium"
+            <button
+              onClick={handleGetApiKey}
+              className="sketch-btn sketch-border px-4 py-1.5 bg-white text-[#0A0A0A] border-2 border-[#0A0A0A] font-mono text-xs sm:text-sm font-medium flex items-center gap-1.5 cursor-pointer"
             >
-              Get API Key
-            </a>
-            <div className="w-8 h-8 rounded-full bg-[#0A0A0A] flex items-center justify-center">
+              {merchantAddress ? (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+                  <span>Dashboard ({merchantAddress.slice(0, 6)}...{merchantAddress.slice(-4)})</span>
+                </>
+              ) : (
+                <>
+                  <Wallet className="w-3.5 h-3.5" />
+                  <span>Connect Wallet</span>
+                </>
+              )}
+            </button>
+            <button
+              onClick={handleGetApiKey}
+              title={merchantAddress ? `Merchant Dashboard (${merchantAddress})` : 'Connect Wallet to view Dashboard'}
+              className="w-8 h-8 rounded-full bg-[#0A0A0A] flex items-center justify-center cursor-pointer relative hover:opacity-85 transition-opacity"
+            >
               <User className="w-4 h-4 text-white" />
-            </div>
+              {merchantAddress && (
+                <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-white" />
+              )}
+            </button>
             {/* Mobile menu button */}
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -207,6 +253,22 @@ export async function batchDisburse(recipients) {
             >
               GitHub
             </a>
+            <button
+              onClick={() => {
+                setMobileMenuOpen(false);
+                handleGetApiKey();
+              }}
+              className="sketch-btn sketch-border px-4 py-2 bg-[#0A0A0A] text-white font-mono text-xs text-center flex items-center justify-center gap-2 cursor-pointer mt-2"
+            >
+              {merchantAddress ? (
+                <span>View Dashboard ({merchantAddress.slice(0, 6)}...{merchantAddress.slice(-4)})</span>
+              ) : (
+                <>
+                  <Wallet className="w-4 h-4" />
+                  <span>Connect Wallet &amp; Get API Key</span>
+                </>
+              )}
+            </button>
           </div>
         )}
       </header>
@@ -810,6 +872,12 @@ export async function batchDisburse(recipients) {
           </div>
         </div>
       </footer>
+
+      {/* Wallet Connect Modal */}
+      <WalletConnectModal
+        isOpen={isWalletModalOpen}
+        onClose={() => setIsWalletModalOpen(false)}
+      />
     </div>
   );
 }

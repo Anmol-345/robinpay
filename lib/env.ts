@@ -11,6 +11,7 @@ const envSchema = z.object({
   // App
   APP_URL: z.string().url(),
   NEXT_PUBLIC_APP_URL: z.string().url(),
+  NEXT_PUBLIC_NETWORK: z.enum(['testnet', 'mainnet']).default('testnet'),
 
   // Robinhood Chain (Chain ID 4663)
   NEXT_PUBLIC_ROBINHOOD_CHAIN_ID: z.string().transform((val) => Number(val)),
@@ -36,12 +37,11 @@ const envSchema = z.object({
 
   // Signing secrets (no database; all state lives on-chain or in signed tokens)
   INVOICE_SIGNING_SECRET: z.string().min(1),
-  API_KEY_SIGNING_SECRET: z.string().min(1),
   MASTER_WEBHOOK_SECRET: z.string().min(1),
+  WEBHOOK_CONFIG_SECRET: z.string().min(1),
   SESSION_SECRET: z.string().min(1),
 
   // Security
-  MIN_KEY_VERSION: z.string().transform((val) => Number(val)).default('1'),
   REQUIRED_CONFIRMATIONS: z.string().transform((val) => Number(val)).default('1'),
   WEBHOOK_TIMEOUT_MS: z.string().transform((val) => Number(val)).default('10000'),
   CRON_SECRET: z.string().min(1),
@@ -61,6 +61,7 @@ export function env(): Env {
     NEXT_PUBLIC_ROBINHOOD_CHAIN_ID: process.env.NEXT_PUBLIC_ROBINHOOD_CHAIN_ID ?? process.env.ROBINHOOD_CHAIN_ID,
     NEXT_PUBLIC_ROBINHOOD_RPC_URL: process.env.NEXT_PUBLIC_ROBINHOOD_RPC_URL ?? process.env.ROBINHOOD_RPC_URL,
     NEXT_PUBLIC_USDC_ADDRESS: process.env.NEXT_PUBLIC_USDC_ADDRESS ?? process.env.USDC_ADDRESS,
+    NEXT_PUBLIC_NETWORK: process.env.NEXT_PUBLIC_NETWORK ?? 'testnet',
   });
   return _env;
 }
