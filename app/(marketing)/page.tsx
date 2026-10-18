@@ -687,14 +687,15 @@ export async function batchDisburse(recipients) {
                   <div className="w-12 h-12 mb-4 border-2 border-[#0A0A0A] rounded-full flex items-center justify-center bg-white font-caveat text-3xl text-[#0A0A0A]">
                     <Percent className="w-6 h-6 text-[#0A0A0A]" />
                   </div>
-                  <h3 className="font-caveat text-3xl text-[#0A0A0A] mb-2">0.1% Flat Fee</h3>
+                  <h3 className="font-caveat text-3xl text-[#0A0A0A] mb-2">No signup. No API keys.</h3>
                   <p className="font-mono text-xs sm:text-sm text-[#525252] leading-relaxed">
-                    No hidden basis points, foreign exchange markups, or monthly minimums.
+                    Just connect your wallet and start accepting payments. No monthly minimums, no
+                    hidden basis points, no foreign exchange markups.
                   </p>
                 </div>
                 <div className="mt-6 pt-3 border-t border-dashed border-[#0A0A0A]/40 font-mono text-xs text-[#525252] flex items-center justify-between">
                   <span>Card rails: ~3.5%</span>
-                  <span className="font-bold text-[#0A0A0A]">RobinPay: 0.1%</span>
+                  <span className="font-bold text-[#0A0A0A]">RobinPay: protocol fee on-chain</span>
                 </div>
               </div>
 
