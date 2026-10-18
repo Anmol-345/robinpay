@@ -2,8 +2,9 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { connectWallet, getWalletClient, isWalletAvailable } from '@/lib/chain/wallet';
-import { Wallet, Sparkles, X, AlertCircle, ArrowRight, CheckCircle2, Shield } from 'lucide-react';
+import { connectWallet, getWalletClient, isWalletAvailable, switchToRobinhoodChain, addTestnetTokenToWallet } from '@/lib/chain/wallet';
+import { Wallet, Sparkles, X, AlertCircle, ArrowRight, CheckCircle2, Shield, RefreshCw, Coins } from 'lucide-react';
+
 
 interface WalletConnectModalProps {
   isOpen: boolean;
@@ -28,18 +29,21 @@ export function WalletConnectModal({ isOpen, onClose }: WalletConnectModalProps)
         return;
       }
 
-      const { address: addr } = await connectWallet();
+      const { address: addr } = await connectWallet({ requireChain: false });
 
       setStatus('signing');
 
-      // 1) Get stateless nonce from server
-      const nonceRes = await fetch(`/api/auth/nonce?address=${addr}`, {
-        cache: 'no-store',
-      });
-      if (!nonceRes.ok) throw new Error('Failed to get SIWE authorization nonce');
-      const nonceData = await nonceRes.json();
+      // 1) Get SIWE session message from server with merchant address
+      const sessionRes = await fetch(`/api/auth/session?address=${encodeURIComponent(addr)}`, { cache: 'no-store' });
+      if (!sessionRes.ok) throw new Error('Failed to get SIWE authorization nonce');
+      const sessionData = await sessionRes.json();
 
-      const message = nonceData.message;
+      let message = sessionData.message;
+      if (message) {
+        const lines = message.split('\n');
+        lines[1] = addr;
+        message = lines.join('\n');
+      }
 
       const walletClient = getWalletClient();
       if (!walletClient) throw new Error('Wallet client could not be initialized');
@@ -49,10 +53,10 @@ export function WalletConnectModal({ isOpen, onClose }: WalletConnectModalProps)
         account: addr as `0x${string}`,
       });
 
-      const loginRes = await fetch('/api/auth/verify', {
+      const loginRes = await fetch('/api/auth/session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, signature, nonce: nonceData.nonce }),
+        body: JSON.stringify({ message, signature, address: addr }),
       });
 
       if (!loginRes.ok) {
@@ -98,6 +102,16 @@ export function WalletConnectModal({ isOpen, onClose }: WalletConnectModalProps)
     }
   };
 
+  const handleSwitchChain = async () => {
+    try {
+      setErrorMessage(null);
+      await switchToRobinhoodChain();
+      setStatus('idle');
+    } catch (err: unknown) {
+      setErrorMessage(err instanceof Error ? err.message : String(err));
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs font-mono">
       {/* Sketched Modal Window */}
@@ -130,6 +144,15 @@ export function WalletConnectModal({ isOpen, onClose }: WalletConnectModalProps)
             <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
             <div className="flex-1">
               <p className="font-semibold">{errorMessage}</p>
+              {errorMessage.includes('Robinhood Chain') && (
+                <button
+                  onClick={handleSwitchChain}
+                  className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 bg-red-900 text-white rounded-sm font-mono text-[11px] font-bold hover:bg-black cursor-pointer"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  <span>Add / Switch to Robinhood Chain in Wallet</span>
+                </button>
+              )}
               {errorMessage.includes('No Ethereum wallet') && (
                 <a
                   href="https://metamask.io/download"
@@ -195,9 +218,26 @@ export function WalletConnectModal({ isOpen, onClose }: WalletConnectModalProps)
           </button>
         </div>
 
-        {/* Footer Note */}
-        <div className="mt-6 pt-3 border-t border-dashed border-[#0A0A0A]/40 flex items-center justify-between text-[11px] text-[#525252]">
-          <span>Chain ID: 4663 (Robinhood Chain)</span>
+        {/* Footer Note & Testnet Helper */}
+        <div className="mt-6 pt-3 border-t border-dashed border-[#0A0A0A]/40 flex flex-wrap items-center justify-between gap-2 text-[11px] text-[#525252]">
+          <div className="flex items-center gap-1.5">
+            <span>Chain ID: 46630 (Testnet)</span>
+            <span>•</span>
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  await addTestnetTokenToWallet();
+                } catch (e) {
+                  console.warn(e);
+                }
+              }}
+              className="underline font-bold text-[#0A0A0A] hover:opacity-80 cursor-pointer flex items-center gap-1"
+            >
+              <Coins className="w-3 h-3 text-emerald-700" />
+              <span>Add Testnet USDC</span>
+            </button>
+          </div>
           <span>Zero Custody</span>
         </div>
       </div>

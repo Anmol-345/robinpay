@@ -31,7 +31,7 @@ export function SIWELogin({ onSuccess, className }: SIWELoginProps) {
     setError(null);
     try {
       setStatus('connecting');
-      const { address: addr } = await connectWallet();
+      const { address: addr } = await connectWallet({ requireChain: false });
       setAddress(addr);
 
       setStatus('signing');

@@ -6,15 +6,16 @@ import { InvoiceForm } from '@/components/dashboard/InvoiceForm';
 import { WebhookForm } from '@/components/dashboard/WebhookForm';
 import { EventFeed } from '@/components/dashboard/EventFeed';
 import { VerifySignature } from '@/components/dashboard/VerifySignature';
+import { TestnetTokensCard } from '@/components/dashboard/TestnetTokensCard';
 import { SignOutButton } from '@/components/auth/SignOutButton';
-import { FileText, Webhook, Activity, ArrowLeft, User, ShieldCheck } from 'lucide-react';
+import { FileText, Webhook, Activity, ArrowLeft, User, ShieldCheck, Coins } from 'lucide-react';
 
 interface DashboardLayoutProps {
   address: string;
 }
 
 export function DashboardLayout({ address }: DashboardLayoutProps) {
-  const [activeTab, setActiveTab] = React.useState<'invoices' | 'webhooks' | 'events' | 'verify'>('invoices');
+  const [activeTab, setActiveTab] = React.useState<'invoices' | 'webhooks' | 'events' | 'verify' | 'tokens'>('invoices');
 
   return (
     <div className="flex flex-col min-h-screen bg-[#FAFAFA] text-[#0A0A0A] font-mono">
@@ -59,6 +60,7 @@ export function DashboardLayout({ address }: DashboardLayoutProps) {
         <div className="flex flex-wrap gap-2 mb-8 border-b-2 border-dashed border-[#0A0A0A]/30 pb-4">
           {[
             { id: 'invoices', label: 'Create Invoice', icon: FileText },
+            { id: 'tokens', label: 'Testnet Tokens & Faucet', icon: Coins },
             { id: 'webhooks', label: 'Webhooks', icon: Webhook },
             { id: 'events', label: 'Event Log', icon: Activity },
             { id: 'verify', label: 'Verify Signature', icon: ShieldCheck },
@@ -78,6 +80,11 @@ export function DashboardLayout({ address }: DashboardLayoutProps) {
               >
                 <Icon className="w-4 h-4" />
                 <span>{label}</span>
+                {id === 'tokens' && (
+                  <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded ml-1">
+                    46630
+                  </span>
+                )}
               </button>
             );
           })}
@@ -85,16 +92,17 @@ export function DashboardLayout({ address }: DashboardLayoutProps) {
 
         {/* Tab Panels */}
         <div className="w-full">
-          {activeTab === 'invoices' && <InvoiceForm />}
+          {activeTab === 'invoices' && <InvoiceForm address={address} />}
+          {activeTab === 'tokens' && <TestnetTokensCard address={address} />}
           {activeTab === 'webhooks' && <WebhookForm address={address} />}
-          {activeTab === 'events' && <EventFeed />}
+          {activeTab === 'events' && <EventFeed address={address} />}
           {activeTab === 'verify' && <VerifySignature />}
         </div>
       </main>
 
       {/* Footer */}
       <footer className="border-t border-dashed border-[#0A0A0A]/30 py-6 text-center text-xs text-[#525252]">
-        Robinhood Chain (Chain ID 4663) • Non-Custodial Merchant Protocol
+        Robinhood Chain Testnet (Chain ID 46630) • Non-Custodial Merchant Gateway
       </footer>
     </div>
   );

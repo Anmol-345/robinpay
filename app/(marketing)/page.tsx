@@ -282,7 +282,7 @@ export async function batchDisburse(recipients) {
             <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-white border-2 border-[#0A0A0A] sketch-border -rotate-1 mb-6 sketch-btn">
               <span className="w-2.5 h-2.5 rounded-full bg-[#0A0A0A] inline-block animate-ping"></span>
               <span className="font-mono text-xs sm:text-sm font-semibold uppercase tracking-wider text-[#0A0A0A]">
-                Robinhood Chain Native (Chain ID 4663)
+                Robinhood Chain Testnet (Chain ID 46630)
               </span>
             </div>
 
@@ -705,7 +705,7 @@ export async function batchDisburse(recipients) {
                   <div className="w-12 h-12 mb-4 border-2 border-[#0A0A0A] rounded-full flex items-center justify-center bg-white">
                     <Zap className="w-6 h-6 text-[#0A0A0A]" />
                   </div>
-                  <h3 className="font-caveat text-3xl text-[#0A0A0A] mb-2">Robinhood Chain Native</h3>
+                  <h3 className="font-caveat text-3xl text-[#0A0A0A] mb-2">Robinhood Chain Testnet Native</h3>
                   <p className="font-mono text-xs sm:text-sm text-[#525252] leading-relaxed">
                     Sub-second block confirmation with fractional cent gas fees.
                   </p>
@@ -864,7 +864,7 @@ export async function batchDisburse(recipients) {
           <div className="pt-6 flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-2 font-mono text-xs text-[#0A0A0A]">
               <Coins className="w-4 h-4 text-[#0A0A0A]" />
-              <span>Built on Robinhood Chain (Chain ID 4663)</span>
+              <span>Built on Robinhood Chain Testnet (Chain ID 46630)</span>
             </div>
 
             <p className="font-mono text-xs text-[#525252]">

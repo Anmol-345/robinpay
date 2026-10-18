@@ -4,12 +4,13 @@
 // Pull missed events for a merchant. PUBLIC, read-only endpoint.
 // Query: ?merchant=0x...&since=<blockNumber>&type=payment.succeeded|...
 // Reads router / vault / escrow logs from the blockchain; nothing persisted.
-import { decodeEventLog, type Hex, isAddress } from 'viem';
+import { decodeEventLog, type Hex, isAddress, parseAbiItem, formatUnits } from 'viem';
 import { publicClient } from '@/lib/chain/client';
 import { ROUTER_ABI } from '@/lib/chain/client';
 import { env } from '@/lib/env';
 import { checkEventsRateLimit, getClientIp } from '@/lib/rate-limit';
 import { jsonWithCorsPublic } from '@/lib/cors';
+import { getEventsForMerchant } from '@/lib/payments/event-store';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -19,18 +20,9 @@ const fail = (code: string, message: string, status = 400) =>
 
 const SCAN_WINDOW = 5000; // blocks per request
 
-interface LogEntry {
-  address: `0x${string}`;
-  blockNumber: bigint;
-  transactionHash: `0x${string}`;
-  logIndex: number;
-  data: Hex;
-  topics: [] | [`0x${string}`, ...`0x${string}`[]];
-}
-
 interface OutEvent {
   type: string;
-  blockNumber: bigint;
+  blockNumber: string;
   txHash: `0x${string}`;
   logIndex: number;
   args: Record<string, unknown>;
@@ -63,43 +55,103 @@ export async function GET(req: Request) {
 
   const events: OutEvent[] = [];
 
-  const addLogs = (logs: LogEntry[], eventName: string) => {
-    for (const log of logs) {
-      try {
-        const ev = decodeEventLog({
-          abi: ROUTER_ABI,
-          data: log.data,
-          topics: log.topics,
-        });
-        if (ev.eventName !== eventName) continue;
-        const args = ev.args as unknown as Record<string, unknown>;
-        if (type && ev.eventName !== type) continue;
-        // Scope to this merchant (indexed address fields) if merchant param given
-        if (merchant && !matchesMerchant(args, merchant)) continue;
+  // 1. Include verified payments recorded for this merchant
+  if (merchant) {
+    try {
+      const stored = getEventsForMerchant(merchant);
+      for (const item of stored) {
+        if (type && item.type !== type) continue;
         events.push({
-          type: ev.eventName,
-          blockNumber: log.blockNumber,
+          type: item.type,
+          blockNumber: item.blockNumber,
+          txHash: item.txHash as `0x${string}`,
+          logIndex: 0,
+          args: item.args,
+        });
+      }
+    } catch (err) {
+      console.warn('[events] Error reading stored events:', err);
+    }
+  }
+
+  // 2. Scan on-chain ERC20 Transfer events directly to the merchant
+  if (merchant) {
+    try {
+      const transferEvent = parseAbiItem('event Transfer(address indexed from, address indexed to, uint256 value)');
+      const erc20Logs = await publicClient().getLogs({
+        event: transferEvent,
+        args: {
+          to: merchant as `0x${string}`,
+        },
+        fromBlock,
+        toBlock: head,
+      });
+
+      for (const log of erc20Logs) {
+        if (events.some((e) => e.txHash.toLowerCase() === log.transactionHash.toLowerCase())) continue;
+        const payer = log.args.from || 'Unknown';
+        const rawValue = log.args.value || 0n;
+        events.push({
+          type: 'PaymentProcessed',
+          blockNumber: log.blockNumber ? log.blockNumber.toString() : 'Testnet',
           txHash: log.transactionHash,
           logIndex: log.logIndex,
-          args,
+          args: {
+            payer,
+            merchant,
+            amount: `${formatUnits(rawValue, 6)} USDC`,
+            token: log.address,
+            gross: rawValue.toString(),
+          },
         });
+      }
+    } catch {
+      // In case of testnet RPC rate limit on getLogs, proceed with stored events
+    }
+  }
+
+  // 3. Scan PaymentRouter logs if contract is configured
+  const routerAddress = env().PAYMENT_ROUTER_ADDRESS;
+  if (routerAddress && routerAddress !== '0x0000000000000000000000000000000000000000') {
+    const paymentProcessedAbi = ROUTER_ABI.find(
+      (a) => a.type === 'event' && a.name === 'PaymentProcessed',
+    );
+    if (paymentProcessedAbi) {
+      try {
+        const routerLogs = await publicClient().getLogs({
+          address: routerAddress as `0x${string}`,
+          event: paymentProcessedAbi as unknown as Extract<typeof ROUTER_ABI[number], { type: 'event' }>,
+          fromBlock,
+          toBlock: head,
+        });
+
+        for (const log of routerLogs) {
+          try {
+            const ev = decodeEventLog({
+              abi: ROUTER_ABI,
+              data: log.data,
+              topics: log.topics,
+            });
+            if (ev.eventName !== 'PaymentProcessed') continue;
+            const args = ev.args as unknown as Record<string, unknown>;
+            if (type && ev.eventName !== type) continue;
+            if (merchant && !matchesMerchant(args, merchant)) continue;
+            if (events.some((e) => e.txHash.toLowerCase() === log.transactionHash.toLowerCase())) continue;
+            events.push({
+              type: ev.eventName,
+              blockNumber: log.blockNumber.toString(),
+              txHash: log.transactionHash,
+              logIndex: log.logIndex,
+              args,
+            });
+          } catch {
+            /* not our event */
+          }
+        }
       } catch {
-        /* not our event */
+        /* router logs query error */
       }
     }
-  };
-
-  const paymentProcessedAbi = ROUTER_ABI.find(
-    (a) => a.type === 'event' && a.name === 'PaymentProcessed',
-  );
-  if (paymentProcessedAbi) {
-    const routerLogs = await publicClient().getLogs({
-      address: env().PAYMENT_ROUTER_ADDRESS as `0x${string}`,
-      event: paymentProcessedAbi as unknown as Extract<typeof ROUTER_ABI[number], { type: 'event' }>,
-      fromBlock,
-      toBlock: head,
-    });
-    addLogs(routerLogs as unknown as LogEntry[], 'PaymentProcessed');
   }
 
   return jsonWithCorsPublic({ events, fromBlock: fromBlock.toString(), head: head.toString() });

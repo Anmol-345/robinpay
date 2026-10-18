@@ -7,12 +7,13 @@
 // Body: { token (signed invoice token), txHash }
 // Returns { status: 'PAID' | 'PENDING', txHash, orderId, verified }
 import { z } from 'zod';
-import { isHex, type Hex } from 'viem';
+import { isHex, type Hex, formatUnits } from 'viem';
 import { parseInvoiceToken, invoiceTokenToOrderId } from '@/lib/invoice/token';
 import { verifyPaymentTx } from '@/lib/payments/status';
 import { parseWebhookConfigToken } from '@/lib/eip712';
 import { sendWebhook } from '@/lib/webhooks/send';
 import { jsonWithCorsPublic } from '@/lib/cors';
+import { recordVerifiedPayment } from '@/lib/payments/event-store';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -75,6 +76,29 @@ export async function POST(req: Request) {
       });
     }
   }
+
+  // Record in merchant event store for Event Log
+  const symbol = invoice.token === '0x0000000000000000000000000000000000000000' ? 'ETH' : 'USDC';
+  const decimals = invoice.decimals || (symbol === 'ETH' ? 18 : 6);
+  const formattedAmount = `${formatUnits(verified.gross, decimals)} ${symbol}`;
+
+  recordVerifiedPayment({
+    type: 'PaymentProcessed',
+    blockNumber: 'Testnet (46630)',
+    txHash,
+    merchant: invoice.merchant,
+    args: {
+      orderId,
+      payer: verified.payer,
+      merchant: invoice.merchant,
+      amount: formattedAmount,
+      gross: verified.gross.toString(),
+      token: verified.token,
+      externalRef: invoice.externalRef,
+      description: invoice.description,
+      timestamp: new Date().toISOString(),
+    },
+  });
 
   return jsonWithCorsPublic({ status: 'PAID', txHash, orderId, verified: invoice.verified });
 }

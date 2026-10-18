@@ -5,7 +5,7 @@
 // and receives a signed httpOnly session cookie (rp_session). No database is
 // involved; the cookie is self-validating via HMAC.
 import { NextResponse } from 'next/server';
-import { verifyMessage, type Hex } from 'viem';
+import { verifyMessage, isAddress, getAddress, type Hex } from 'viem';
 import { z } from 'zod';
 import { cookies } from 'next/headers';
 import { verifySession, buildSiweMessage, setSessionCookie } from '@/lib/auth/siwe';
@@ -20,10 +20,19 @@ const fail = (code: string, message: string, status = 400) =>
   NextResponse.json({ error: { code, message } }, { status });
 
 // GET: return session status + nonce & domain for the client to build a SIWE message.
-export async function GET() {
+export async function GET(req: Request) {
   const cookieStore = await cookies();
   const token = cookieStore.get('rp_session')?.value;
   const currentSession = token ? verifySession(token) : null;
+
+  const url = new URL(req.url);
+  const queryAddr = url.searchParams.get('address');
+  const activeAddress =
+    queryAddr && isAddress(queryAddr)
+      ? getAddress(queryAddr)
+      : currentSession?.address && isAddress(currentSession.address)
+        ? getAddress(currentSession.address)
+        : null;
 
   const nonce = crypto.randomUUID();
   const issuedAt = new Date().toISOString();
@@ -35,7 +44,7 @@ export async function GET() {
     chainId: 4663,
     issuedAt,
     message: buildSiweMessage({
-      address: (currentSession?.address as `0x${string}`) ?? '0x',
+      address: (activeAddress as `0x${string}`) ?? '0x0000000000000000000000000000000000000000',
       chainId: 4663,
       nonce,
       issuedAt,
@@ -69,25 +78,31 @@ export async function POST(req: Request) {
     .object({
       message: z.string(),
       signature: z.string().refine((v): v is Hex => v.startsWith('0x') && v.length === 132),
+      address: z.string().optional(),
     })
     .safeParse(body);
   if (!parsed.success) return fail('BAD_REQUEST', 'Invalid SIWE payload', 400);
 
-  const { message, signature } = parsed.data;
+  const { message, signature, address: providedAddress } = parsed.data;
 
   // The signer address is embedded in the SIWE message (2nd line).
   const lines = message.split('\n');
   const addressLine = lines[1]?.trim();
-  if (!addressLine || !addressLine.startsWith('0x')) {
-    return fail('INVALID_MESSAGE', 'SIWE message missing address', 401);
+  if (!addressLine || !isAddress(addressLine)) {
+    return fail('INVALID_MESSAGE', 'SIWE message missing valid address', 401);
   }
 
+  if (providedAddress && isAddress(providedAddress)) {
+    if (getAddress(providedAddress) !== getAddress(addressLine)) {
+      return fail('ADDRESS_MISMATCH', 'Signed message address does not match provided address', 401);
+    }
+  }
 
   // Recover / confirm the signer by verifying the signature against the address.
   let isValid = false;
   try {
     isValid = await verifyMessage({
-      address: addressLine as `0x${string}`,
+      address: getAddress(addressLine),
       message,
       signature,
     });
@@ -96,7 +111,7 @@ export async function POST(req: Request) {
   }
   if (!isValid) return fail('INVALID_SIGNATURE', 'SIWE signature verification failed', 401);
 
-  const address = addressLine.toLowerCase() as `0x${string}`;
+  const address = getAddress(addressLine).toLowerCase() as `0x${string}`;
 
   // Minimal SIWE field validation.
   const domainLine = lines.find((l) => l.startsWith('URI: '));

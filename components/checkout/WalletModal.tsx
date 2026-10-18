@@ -37,7 +37,7 @@ export function WalletModal({ open, onClose, onConnect }: WalletModalProps) {
       <div className="relative bg-white dark:bg-zinc-900 p-6 rounded-xl shadow-xl w-full max-w-sm border border-zinc-200 dark:border-zinc-800">
         <h2 className="text-lg font-semibold text-black dark:text-white mb-1">Connect wallet</h2>
         <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-6">
-          Connect to Robinhood Chain (Chain ID 4663) to sign the payment.
+          Connect to Robinhood Chain Testnet (Chain ID 46630) to sign the payment.
         </p>
 
         {!isWalletAvailable() ? (

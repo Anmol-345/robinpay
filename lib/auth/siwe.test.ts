@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { signSession, verifySession } from '@/lib/auth/siwe';
+import { privateKeyToAccount } from 'viem/accounts';
+import { signSession, verifySession, buildSiweMessage, verifySiweSignature } from '@/lib/auth/siwe';
 
 describe('SIWE session cookie', () => {
   const session = {
@@ -31,4 +32,29 @@ describe('SIWE session cookie', () => {
     expect(verifySession('not-a-session')).toBeNull();
     expect(verifySession('')).toBeNull();
   });
+
+  it('builds SIWE message and verifies signature from a wallet', async () => {
+    // Standard Hardhat / Anvil account 0 private key
+    const account = privateKeyToAccount('0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80');
+    const msg = buildSiweMessage({
+      address: account.address,
+      chainId: 4663,
+      nonce: 'abc123nonce',
+      issuedAt: new Date().toISOString(),
+      domain: 'localhost:3000',
+    });
+
+    const lines = msg.split('\n');
+    expect(lines[1]).toBe(account.address);
+
+    const signature = await account.signMessage({ message: msg });
+    const verified = await verifySiweSignature({ message: msg, signature });
+    expect(verified).toBe(true);
+
+    // Tampered message should fail
+    const tamperedMsg = msg.replace('4663', '1');
+    const failVerified = await verifySiweSignature({ message: tamperedMsg, signature });
+    expect(failVerified).toBe(false);
+  });
 });
+

@@ -5,13 +5,16 @@
 // Confirm these values against Robinhood Chain's official docs.
 import { defineChain } from 'viem';
 
-export const ROBINHOOD_CHAIN_ID = 4663;
+export const ROBINHOOD_CHAIN_ID =
+  typeof process !== 'undefined' && process.env.NEXT_PUBLIC_ROBINHOOD_CHAIN_ID
+    ? parseInt(process.env.NEXT_PUBLIC_ROBINHOOD_CHAIN_ID, 10)
+    : 46630;
 
 export function robinhoodChain(rpcUrl: string) {
   return defineChain({
     id: ROBINHOOD_CHAIN_ID,
-    name: 'Robinhood Chain',
-    network: 'robinhood-chain',
+    name: 'Robinhood Chain Testnet',
+    network: 'robinhood-chain-testnet',
     nativeCurrency: {
       decimals: 18,
       name: 'Ether',
@@ -23,8 +26,8 @@ export function robinhoodChain(rpcUrl: string) {
     },
     blockExplorers: {
       default: {
-        name: 'Robinhood Explorer',
-        url: process.env.NEXT_PUBLIC_ROBINHOOD_EXPLORER_URL ?? '',
+        name: 'Robinhood Chain Testnet Explorer',
+        url: process.env.NEXT_PUBLIC_ROBINHOOD_EXPLORER_URL || 'https://explorer.testnet.robinhoodchain.com',
       },
     },
     testnet: true,

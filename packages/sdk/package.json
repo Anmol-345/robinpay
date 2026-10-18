@@ -1,0 +1,32 @@
+{
+  "name": "@robinpay/sdk",
+  "version": "0.1.0",
+  "description": "RobinPay SDK — Drop-in React payment buttons, crypto checkout, invoices, and subscriptions on Robinhood Chain",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc"
+  },
+  "keywords": [
+    "robinpay",
+    "crypto-payments",
+    "robinhood-chain",
+    "checkout",
+    "usdc",
+    "web3"
+  ],
+  "author": "RobinPay Team",
+  "license": "MIT",
+  "peerDependencies": {
+    "react": ">=18.0.0",
+    "react-dom": ">=18.0.0"
+  },
+  "dependencies": {
+    "viem": "^2.21.0"
+  }
+}

@@ -19,7 +19,8 @@
       }
     ],
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "@robinpay/sdk": ["./packages/sdk/src/index.ts"]
     }
   },
   "include": [

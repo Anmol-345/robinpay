@@ -67,7 +67,7 @@ export function env(): Env {
 }
 
 export const isTestnet = (): boolean => {
-  return env().ROBINHOOD_CHAIN_ID === 4663;
+  return env().ROBINHOOD_CHAIN_ID === 46630 || env().ROBINHOOD_CHAIN_ID === 4663;
 };
 
 export const getContractAddress = (

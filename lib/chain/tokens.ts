@@ -21,13 +21,19 @@ export const NATIVE_TOKEN: Token = {
   allowlisted: true,
 };
 
+export const DEFAULT_TESTNET_USDC_ADDRESS: `0x${string}` = '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238';
+
 export function USDC(): Token {
-  const address = env().USDC_ADDRESS as `0x${string}`;
+  const envAddr = env().USDC_ADDRESS as `0x${string}`;
+  const address =
+    envAddr && envAddr !== '0x0000000000000000000000000000000000000000'
+      ? envAddr
+      : DEFAULT_TESTNET_USDC_ADDRESS;
   return {
     symbol: 'USDC',
-    name: 'USD Coin',
+    name: 'USD Coin (Robinhood Testnet)',
     address,
-    decimals: env().USDC_DECIMALS,
+    decimals: env().USDC_DECIMALS || 6,
     allowlisted: true,
   };
 }

@@ -5,7 +5,7 @@
 // Verifies the SIWE signature against the address embedded in the message,
 // validates the nonce (HMAC-signed, 5-minute TTL), then sets a signed
 // httpOnly session cookie (rp_session) containing the address and expiry.
-import { verifyMessage, type Hex } from 'viem';
+import { verifyMessage, isAddress, getAddress, type Hex } from 'viem';
 import { z } from 'zod';
 import { verifyNonce } from '@/lib/auth/nonce';
 import { signSession } from '@/lib/auth/siwe';
@@ -71,14 +71,14 @@ export async function POST(req: Request) {
   // 2) The signer address is embedded in the SIWE message (2nd line).
   const lines = message.split('\n');
   const addressLine = lines[1]?.trim();
-  if (!addressLine || !addressLine.startsWith('0x')) {
-    return fail('INVALID_MESSAGE', 'SIWE message missing address', 401);
+  if (!addressLine || !isAddress(addressLine)) {
+    return fail('INVALID_MESSAGE', 'SIWE message missing valid address', 401);
   }
 
-  const address = addressLine.toLowerCase() as `0x${string}`;
+  const address = getAddress(addressLine).toLowerCase() as `0x${string}`;
 
-  // 3) Nonce address must match SIWE message address
-  if (address !== nonceAddress) {
+  // 3) Nonce address must match SIWE message address (case-insensitive)
+  if (address !== nonceAddress.toLowerCase()) {
     return fail('NONCE_ADDRESS_MISMATCH', 'Nonce address does not match SIWE message', 401);
   }
 
@@ -86,7 +86,7 @@ export async function POST(req: Request) {
   let isValid = false;
   try {
     isValid = await verifyMessage({
-      address,
+      address: getAddress(addressLine),
       message,
       signature,
     });

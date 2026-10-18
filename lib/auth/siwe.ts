@@ -6,7 +6,7 @@
 // HMAC-SHA256 token: base64url(header).base64url(payload).hmac.
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { cookies } from 'next/headers';
-import { verifyMessage } from 'viem';
+import { verifyMessage, isAddress, getAddress } from 'viem';
 import { env } from '@/lib/env';
 
 const SESSION_COOKIE = 'rp_session';
@@ -108,10 +108,10 @@ export async function verifySiweSignature(params: {
 }): Promise<boolean> {
   const lines = params.message.split('\n');
   const addressLine = lines[1]?.trim();
-  if (!addressLine || !addressLine.startsWith('0x')) return false;
+  if (!addressLine || !isAddress(addressLine)) return false;
   try {
     return await verifyMessage({
-      address: addressLine as `0x${string}`,
+      address: getAddress(addressLine),
       message: params.message,
       signature: params.signature,
     });
