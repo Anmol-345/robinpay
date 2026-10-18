@@ -138,7 +138,7 @@ Open **[http://localhost:3000](http://localhost:3000)** in your browser.
 
 ### 1. Create a Stateless Invoice
 ```bash
-curl -X POST https://robinpay.vercel.app/api/v1/invoices/create \
+curl -X POST https://robinpay-app.vercel.app/api/v1/invoices/create \
   -H "Content-Type: application/json" \
   -d '{
     "merchant": "0xYourMerchantWalletAddress",
@@ -154,7 +154,7 @@ curl -X POST https://robinpay.vercel.app/api/v1/invoices/create \
 {
   "orderId": "0x78ab...91f2",
   "token": "inv_eyJhbGciOi...",
-  "url": "https://robinpay.vercel.app/pay/inv_eyJhbGciOi...",
+  "url": "https://robinpay-app.vercel.app/pay/inv_eyJhbGciOi...",
   "verified": true
 }
 ```
@@ -162,7 +162,7 @@ curl -X POST https://robinpay.vercel.app/api/v1/invoices/create \
 ### 2. Embeddable Pay Button (HTML / React)
 ```html
 <iframe
-  src="https://robinpay.vercel.app/embed/checkout?token=inv_YOUR_TOKEN"
+  src="https://robinpay-app.vercel.app/embed/checkout?token=inv_YOUR_TOKEN"
   width="420"
   height="580"
   frameborder="0"

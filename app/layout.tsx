@@ -1,9 +1,23 @@
 import type { Metadata } from 'next';
 import './globals.css';
 
-const appUrl =
-  process.env.NEXT_PUBLIC_APP_URL ||
-  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
+function resolveBaseUrl(): string {
+  // 1. In Vercel, use the actual production or deployment domain
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+    return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
+  }
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}`;
+  }
+  // 2. Fall back to user-configured URL (ignoring stale placeholder)
+  const explicit = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL;
+  if (explicit && !explicit.includes('robinpay.vercel.app')) {
+    return explicit;
+  }
+  return 'https://robinpay-app.vercel.app';
+}
+
+const appUrl = resolveBaseUrl();
 
 export const metadata: Metadata = {
   metadataBase: new URL(appUrl),
@@ -32,13 +46,15 @@ export const metadata: Metadata = {
     title: 'RobinPay — Developer-First Crypto Payment Gateway',
     description:
       'Accept crypto payments in 5 lines of code on Robinhood Chain Testnet (46630). Zero intermediary custody.',
-    url: '/',
+    url: appUrl,
     siteName: 'RobinPay',
     images: [
       {
-        url: '/og.png',
+        url: `${appUrl}/og.png`,
+        secureUrl: `${appUrl}/og.png`,
         width: 1024,
         height: 1024,
+        type: 'image/png',
         alt: 'RobinPay — Accept crypto payments in 5 lines of code on Robinhood Chain',
       },
     ],
@@ -50,7 +66,7 @@ export const metadata: Metadata = {
     title: 'RobinPay — Developer-First Crypto Payment Gateway',
     description:
       'Accept crypto payments in 5 lines of code on Robinhood Chain Testnet (46630). Zero intermediary custody.',
-    images: ['/og.png'],
+    images: [`${appUrl}/og.png`],
     creator: '@robinpay',
   },
   icons: {
