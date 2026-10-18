@@ -31,11 +31,15 @@ export function WalletConnectModal({ isOpen, onClose }: WalletConnectModalProps)
       const { address: addr } = await connectWallet();
 
       setStatus('signing');
-      const sessionRes = await fetch('/api/auth/session', { cache: 'no-store' });
-      if (!sessionRes.ok) throw new Error('Failed to get SIWE authorization nonce');
-      const sessionData = await sessionRes.json();
 
-      const message = sessionData.message.replace("address: '0x'", `address: '${addr}'`);
+      // 1) Get stateless nonce from server
+      const nonceRes = await fetch(`/api/auth/nonce?address=${addr}`, {
+        cache: 'no-store',
+      });
+      if (!nonceRes.ok) throw new Error('Failed to get SIWE authorization nonce');
+      const nonceData = await nonceRes.json();
+
+      const message = nonceData.message;
 
       const walletClient = getWalletClient();
       if (!walletClient) throw new Error('Wallet client could not be initialized');
@@ -45,10 +49,10 @@ export function WalletConnectModal({ isOpen, onClose }: WalletConnectModalProps)
         account: addr as `0x${string}`,
       });
 
-      const loginRes = await fetch('/api/auth/session', {
+      const loginRes = await fetch('/api/auth/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, signature }),
+        body: JSON.stringify({ message, signature, nonce: nonceData.nonce }),
       });
 
       if (!loginRes.ok) {

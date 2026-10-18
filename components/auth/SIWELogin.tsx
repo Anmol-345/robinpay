@@ -35,12 +35,18 @@ export function SIWELogin({ onSuccess, className }: SIWELoginProps) {
       setAddress(addr);
 
       setStatus('signing');
-      const sessionRes = await fetch('/api/auth/session', { cache: 'no-store' });
-      if (!sessionRes.ok) throw new Error('Failed to get SIWE nonce');
-      const session = await sessionRes.json();
 
-      const message = session.message.replace("address: '0x'", `address: '${addr}'`);
+      // 1) Get stateless nonce from server
+      const nonceRes = await fetch(`/api/auth/nonce?address=${addr}`, {
+        cache: 'no-store',
+      });
+      if (!nonceRes.ok) throw new Error('Failed to get SIWE nonce');
+      const nonceData = await nonceRes.json();
 
+      // 2) Build SIWE message with the nonce
+      const message = nonceData.message;
+
+      // 3) Sign message with wallet
       const walletClient = getWalletClient();
       if (!walletClient) throw new Error('Wallet client not available');
       const signature = await walletClient.signMessage({
@@ -48,10 +54,11 @@ export function SIWELogin({ onSuccess, className }: SIWELoginProps) {
         account: addr as `0x${string}`,
       });
 
-      const loginRes = await fetch('/api/auth/session', {
+      // 4) POST signature + nonce to get session cookie
+      const loginRes = await fetch('/api/auth/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, signature }),
+        body: JSON.stringify({ message, signature, nonce: nonceData.nonce }),
       });
       if (!loginRes.ok) {
         const err = await loginRes.json();
