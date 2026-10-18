@@ -1,16 +1,15 @@
 // =============================================================================
 // app/api/v1/events/route.ts
 // =============================================================================
-// Pull missed events for a merchant. Reads router / vault / escrow logs from
-// the blockchain; nothing is persisted server-side.
-// Query: ?since=<blockNumber>&type=payment.succeeded|subscription.charged|...
-// Auth: sk_ key.
+// Pull missed events for a merchant. PUBLIC, read-only endpoint.
+// Query: ?merchant=0x...&since=<blockNumber>&type=payment.succeeded|...
+// Reads router / vault / escrow logs from the blockchain; nothing persisted.
 import { NextResponse } from 'next/server';
-import { decodeEventLog, type Hex } from 'viem';
+import { decodeEventLog, type Hex, isAddress } from 'viem';
 import { publicClient } from '@/lib/chain/client';
 import { ROUTER_ABI } from '@/lib/chain/client';
-import { authenticate } from '@/lib/auth/stateless';
 import { env } from '@/lib/env';
+import { checkEventsRateLimit, getClientIp } from '@/lib/rate-limit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -38,12 +37,26 @@ interface OutEvent {
 }
 
 export async function GET(req: Request) {
-  const auth = await authenticate(req);
-  if (!auth) return fail('UNAUTHORIZED', 'Invalid API key', 401);
-
+  // Rate limit by IP (+ merchant if provided)
+  const ip = getClientIp(req);
   const { searchParams } = new URL(req.url);
+  const merchant = searchParams.get('merchant');
+  const eventsLimit = checkEventsRateLimit(ip, merchant ?? undefined);
+  if (!eventsLimit.allowed) {
+    return fail(
+      'RATE_LIMITED',
+      `Too many event requests. Retry after ${eventsLimit.retryAfter}s`,
+      429,
+    );
+  }
+
   const since = searchParams.get('since');
   const type = searchParams.get('type'); // optional event type filter
+
+  // Validate merchant address if provided
+  if (merchant && !isAddress(merchant)) {
+    return fail('INVALID_MERCHANT', 'Invalid merchant address', 400);
+  }
 
   const head = await publicClient().getBlockNumber();
   const fromBlock = since ? BigInt(since) : head - BigInt(SCAN_WINDOW);
@@ -61,8 +74,8 @@ export async function GET(req: Request) {
         if (ev.eventName !== eventName) continue;
         const args = ev.args as unknown as Record<string, unknown>;
         if (type && ev.eventName !== type) continue;
-        // Scope to this merchant (indexed address fields).
-        if (!matchesMerchant(args, auth.merchant)) continue;
+        // Scope to this merchant (indexed address fields) if merchant param given
+        if (merchant && !matchesMerchant(args, merchant)) continue;
         events.push({
           type: ev.eventName,
           blockNumber: log.blockNumber,

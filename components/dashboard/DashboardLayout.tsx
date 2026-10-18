@@ -7,14 +7,14 @@ import { WebhookForm } from '@/components/dashboard/WebhookForm';
 import { EventFeed } from '@/components/dashboard/EventFeed';
 import { VerifySignature } from '@/components/dashboard/VerifySignature';
 import { SignOutButton } from '@/components/auth/SignOutButton';
-import { Key, FileText, Webhook, Activity, ArrowLeft, User, ShieldCheck } from 'lucide-react';
+import { FileText, Webhook, Activity, ArrowLeft, User, ShieldCheck } from 'lucide-react';
 
 interface DashboardLayoutProps {
   address: string;
 }
 
 export function DashboardLayout({ address }: DashboardLayoutProps) {
-  const [activeTab, setActiveTab] = React.useState<'invoices' | 'webhooks' | 'events'>('invoices');
+  const [activeTab, setActiveTab] = React.useState<'invoices' | 'webhooks' | 'events' | 'verify'>('invoices');
 
   return (
     <div className="flex flex-col min-h-screen bg-[#FAFAFA] text-[#0A0A0A] font-mono">

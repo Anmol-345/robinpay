@@ -14,7 +14,6 @@ export function WalletConnectModal({ isOpen, onClose }: WalletConnectModalProps)
   const router = useRouter();
   const [status, setStatus] = React.useState<'idle' | 'connecting' | 'signing' | 'success' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
-  const [connectedAddress, setConnectedAddress] = React.useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -30,7 +29,6 @@ export function WalletConnectModal({ isOpen, onClose }: WalletConnectModalProps)
       }
 
       const { address: addr } = await connectWallet();
-      setConnectedAddress(addr);
 
       setStatus('signing');
       const sessionRes = await fetch('/api/auth/session', { cache: 'no-store' });
@@ -84,8 +82,7 @@ export function WalletConnectModal({ isOpen, onClose }: WalletConnectModalProps)
         body: JSON.stringify({ demo: true }),
       });
       if (!res.ok) throw new Error('Could not establish demo merchant session');
-      const data = await res.json();
-      setConnectedAddress(data.address);
+      await res.json();
       setStatus('success');
       setTimeout(() => {
         onClose();

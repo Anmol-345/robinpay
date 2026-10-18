@@ -20,6 +20,8 @@ export interface InvoiceTokenPayload {
   externalRef?: string;
   metadata?: Record<string, unknown>;
   escrow?: { milestones: Array<{ title: string; amount: string; releaseInDays: number }> };
+  webhookToken?: string; // stateless webhook config token (whc_...)
+  verified?: boolean; // true if EIP-712 merchant signature was verified
   exp: number; // unix seconds
 }
 

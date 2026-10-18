@@ -9,8 +9,8 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { parse } from 'papaparse';
 import { isAddress, keccak256, toHex, parseUnits } from 'viem';
-import { authenticate } from '@/lib/auth/stateless';
 import { getToken } from '@/lib/chain/tokens';
+import { checkInvoiceRateLimit, getClientIp } from '@/lib/rate-limit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -19,6 +19,7 @@ const MAX_RECIPIENTS = 200;
 
 const Body = z.object({
   batchId: z.string().min(1),
+  merchant: z.string().refine((v) => isAddress(v), 'Invalid merchant address'),
   token: z.enum(['USDC', 'ETH']),
   csv: z.string().min(1),
 });
@@ -27,12 +28,21 @@ const fail = (code: string, message: string, status = 400) =>
   NextResponse.json({ error: { code, message } }, { status });
 
 export async function POST(req: Request) {
-  const auth = await authenticate(req);
-  if (!auth) return fail('UNAUTHORIZED', 'Invalid API key', 401);
+  // Rate limit by IP + merchant
+  const ip = getClientIp(req);
 
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return fail('BAD_REQUEST', parsed.error.message);
-  const { batchId, token: tokenSymbol, csv } = parsed.data;
+  const { batchId, merchant: merchantParam, token: tokenSymbol, csv } = parsed.data;
+
+  const merchantLimit = checkInvoiceRateLimit(ip, merchantParam);
+  if (!merchantLimit.allowed) {
+    return fail(
+      'RATE_LIMITED',
+      `Too many payroll requests for this merchant. Retry after ${merchantLimit.retryAfter}s`,
+      429,
+    );
+  }
 
   const token = getToken(tokenSymbol);
   if (!token) return fail('TOKEN_NOT_SUPPORTED', 'Token not supported', 400);

@@ -2,10 +2,12 @@
 // app/api/v1/subscriptions/route.ts
 // =============================================================================
 // Subscription plan management. Plans live on-chain via SubscriptionVault; this
-// endpoint is a thin stateless helper. No database writes.
+// endpoint is a thin stateless helper. PUBLIC endpoint — merchant address in
+// body identifies the caller. No database writes.
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { authenticate } from '@/lib/auth/stateless';
+import { isAddress } from 'viem';
+import { checkInvoiceRateLimit, getClientIp } from '@/lib/rate-limit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -21,6 +23,7 @@ export async function GET() {
 }
 
 const Body = z.object({
+  merchant: z.string().refine((v) => isAddress(v), 'Invalid merchant address'),
   name: z.string().min(1).max(100),
   token: z.enum(['USDC', 'ETH']),
   amount: z.string().regex(/^\d+(\.\d{1,18})?$/),
@@ -29,22 +32,26 @@ const Body = z.object({
 });
 
 export async function POST(req: Request) {
-  const auth = await authenticate(req);
-  if (!auth) return fail('UNAUTHORIZED', 'Invalid API key', 401);
+  const ip = getClientIp(req);
 
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return fail('BAD_REQUEST', parsed.error.message);
-  const b = parsed.data;
+  const { merchant: merchantParam, ...rest } = parsed.data;
+
+  const merchantLimit = checkInvoiceRateLimit(ip, merchantParam);
+  if (!merchantLimit.allowed) {
+    return fail(
+      'RATE_LIMITED',
+      `Too many subscription requests for this merchant. Retry after ${merchantLimit.retryAfter}s`,
+      429,
+    );
+  }
 
   return NextResponse.json(
     {
       plan: {
-        merchant: auth.merchant,
-        name: b.name,
-        token: b.token,
-        amount: b.amount,
-        intervalSecs: b.intervalSecs,
-        trialSecs: b.trialSecs,
+        merchant: merchantParam.toLowerCase(),
+        ...rest,
         note: 'Call createPlan on SubscriptionVault on-chain to register the plan.',
       },
     },
