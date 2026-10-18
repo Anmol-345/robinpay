@@ -55,9 +55,16 @@ export function env(): Env {
   if (_env) return _env;
   // Next.js exposes NEXT_PUBLIC_* on process.env at build time; validate the
   // union of server + client variables.
+  const appUrl =
+    process.env.APP_URL ??
+    (process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : 'http://localhost:3000');
+
   _env = envSchema.parse({
     ...process.env,
-    NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL ?? process.env.APP_URL,
+    APP_URL: appUrl,
+    NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL ?? appUrl,
     NEXT_PUBLIC_ROBINHOOD_CHAIN_ID: process.env.NEXT_PUBLIC_ROBINHOOD_CHAIN_ID ?? process.env.ROBINHOOD_CHAIN_ID,
     NEXT_PUBLIC_ROBINHOOD_RPC_URL: process.env.NEXT_PUBLIC_ROBINHOOD_RPC_URL ?? process.env.ROBINHOOD_RPC_URL,
     NEXT_PUBLIC_USDC_ADDRESS: process.env.NEXT_PUBLIC_USDC_ADDRESS ?? process.env.USDC_ADDRESS,

@@ -25,6 +25,7 @@ import {
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { WalletConnectModal } from '@/components/auth/WalletConnectModal';
+import { SiteFooter } from '@/components/marketing/SiteFooter';
 
 export default function MarketingPage() {
   const router = useRouter();
@@ -169,7 +170,7 @@ export async function batchDisburse(recipients) {
               Why RobinPay
             </a>
             <a
-              href="https://github.com"
+              href="https://github.com/Anmol-345/robinpay"
               target="_blank"
               rel="noreferrer"
               className="text-[#0A0A0A] hover:underline decoration-[#0A0A0A] underline-offset-4 transition-all"
@@ -775,104 +776,7 @@ export async function batchDisburse(recipients) {
       </main>
 
       {/* FOOTER */}
-      <footer className="w-full bg-[#FAFAFA] border-t-2 border-dashed border-[#0A0A0A] pt-16 pb-12">
-        <div className="max-w-[1100px] mx-auto px-6 lg:px-12">
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-8 pb-12 border-b border-dashed border-[#0A0A0A]">
-            {/* Col 1 */}
-            <div className="md:col-span-5 flex flex-col gap-3">
-              <div className="flex items-center gap-2">
-                <span className="font-caveat text-3xl text-[#0A0A0A]">RobinPay</span>
-              </div>
-              <p className="font-mono text-xs sm:text-sm text-[#525252] max-w-sm leading-relaxed">
-                Payments, minus the middlemen. Built for developers engineering the decentralized economy on Robinhood Chain.
-              </p>
-            </div>
-
-            {/* Col 2 */}
-            <div className="md:col-span-2 flex flex-col gap-2">
-              <h3 className="font-caveat text-2xl text-[#0A0A0A]">Product</h3>
-              <ul className="flex flex-col gap-1.5 text-xs font-mono text-[#525252]">
-                <li>
-                  <button onClick={() => setActiveModule('checkout')} className="hover:underline text-left cursor-pointer">
-                    Checkout
-                  </button>
-                </li>
-                <li>
-                  <button onClick={() => setActiveModule('subscriptions')} className="hover:underline text-left cursor-pointer">
-                    Subscriptions
-                  </button>
-                </li>
-                <li>
-                  <button onClick={() => setActiveModule('invoices')} className="hover:underline text-left cursor-pointer">
-                    Invoices
-                  </button>
-                </li>
-                <li>
-                  <button onClick={() => setActiveModule('payroll')} className="hover:underline text-left cursor-pointer">
-                    Payroll
-                  </button>
-                </li>
-              </ul>
-            </div>
-
-            {/* Col 3 */}
-            <div className="md:col-span-2 flex flex-col gap-2">
-              <h3 className="font-caveat text-2xl text-[#0A0A0A]">Developers</h3>
-              <ul className="flex flex-col gap-1.5 text-xs font-mono text-[#525252]">
-                <li>
-                  <a href="#how-it-works" className="hover:underline">
-                    Docs
-                  </a>
-                </li>
-                <li>
-                  <a href="#features" className="hover:underline">
-                    API reference
-                  </a>
-                </li>
-                <li>
-                  <a href="https://github.com" target="_blank" rel="noreferrer" className="hover:underline">
-                    GitHub
-                  </a>
-                </li>
-                <li>
-                  <span className="inline-flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-emerald-600 inline-block"></span>
-                    Operational
-                  </span>
-                </li>
-              </ul>
-            </div>
-
-            {/* Col 4 */}
-            <div className="md:col-span-3 flex flex-col gap-2">
-              <h3 className="font-caveat text-2xl text-[#0A0A0A]">Company</h3>
-              <ul className="flex flex-col gap-1.5 text-xs font-mono text-[#525252]">
-                <li>
-                  <span className="text-[#525252]">RobinPay Protocol</span>
-                </li>
-                <li>
-                  <a href="#" className="hover:underline">Terms &amp; Disclaimers</a>
-                </li>
-                <li>
-                  <a href="#" className="hover:underline">Privacy Policy</a>
-                </li>
-              </ul>
-            </div>
-          </div>
-
-          {/* Bottom Bar */}
-          <div className="pt-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-2 font-mono text-xs text-[#0A0A0A]">
-              <Coins className="w-4 h-4 text-[#0A0A0A]" />
-              <span>Built on Robinhood Chain Testnet (Chain ID 46630)</span>
-            </div>
-
-            <p className="font-mono text-xs text-[#525252]">
-              © {new Date().getFullYear()} RobinPay Labs. Hand-inked protocols.
-            </p>
-          </div>
-        </div>
-      </footer>
+      <SiteFooter />
 
       {/* Wallet Connect Modal */}
       <WalletConnectModal
