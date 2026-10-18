@@ -2,19 +2,19 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { APIKeyCard } from '@/components/dashboard/APIKeyCard';
 import { InvoiceForm } from '@/components/dashboard/InvoiceForm';
 import { WebhookForm } from '@/components/dashboard/WebhookForm';
 import { EventFeed } from '@/components/dashboard/EventFeed';
+import { VerifySignature } from '@/components/dashboard/VerifySignature';
 import { SignOutButton } from '@/components/auth/SignOutButton';
-import { Key, FileText, Webhook, Activity, ArrowLeft, User } from 'lucide-react';
+import { Key, FileText, Webhook, Activity, ArrowLeft, User, ShieldCheck } from 'lucide-react';
 
 interface DashboardLayoutProps {
   address: string;
 }
 
 export function DashboardLayout({ address }: DashboardLayoutProps) {
-  const [activeTab, setActiveTab] = React.useState<'keys' | 'invoices' | 'webhooks' | 'events'>('keys');
+  const [activeTab, setActiveTab] = React.useState<'invoices' | 'webhooks' | 'events'>('invoices');
 
   return (
     <div className="flex flex-col min-h-screen bg-[#FAFAFA] text-[#0A0A0A] font-mono">
@@ -58,10 +58,10 @@ export function DashboardLayout({ address }: DashboardLayoutProps) {
         {/* Navigation Tabs */}
         <div className="flex flex-wrap gap-2 mb-8 border-b-2 border-dashed border-[#0A0A0A]/30 pb-4">
           {[
-            { id: 'keys', label: 'API Keys', icon: Key },
             { id: 'invoices', label: 'Create Invoice', icon: FileText },
             { id: 'webhooks', label: 'Webhooks', icon: Webhook },
             { id: 'events', label: 'Event Log', icon: Activity },
+            { id: 'verify', label: 'Verify Signature', icon: ShieldCheck },
           ].map(({ id, label, icon: Icon }) => {
             const isSelected = activeTab === id;
             return (
@@ -85,10 +85,10 @@ export function DashboardLayout({ address }: DashboardLayoutProps) {
 
         {/* Tab Panels */}
         <div className="w-full">
-          {activeTab === 'keys' && <APIKeyCard address={address} />}
           {activeTab === 'invoices' && <InvoiceForm />}
           {activeTab === 'webhooks' && <WebhookForm address={address} />}
           {activeTab === 'events' && <EventFeed />}
+          {activeTab === 'verify' && <VerifySignature />}
         </div>
       </main>
 
